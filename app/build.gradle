@@ -11,9 +11,21 @@ android {
         versionCode 1
         versionName '1.0'
     }
+    signingConfigs {
+        fix {
+            storeFile file('../fix.keystore')
+            storePassword 'jiugongge2026'
+            keyAlias 'jiugongge'
+            keyPassword 'jiugongge2026'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.fix
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.fix
         }
     }
     compileOptions {
