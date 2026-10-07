@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#08B8B5">
-<title>kingSchool 单词速记</title>
+<title>洗脑背刺</title>
 <style>/* ===== KingSchool 单词速记 · 设计令牌 (S1) =====
    设计基准：864 x 1920（录像分辨率）
    所有尺寸写法：calc(N * var(--S))
@@ -69,7 +69,7 @@ body{
 
 /* ===== 顶栏 ===== */
 .topbar{
-  height:calc(88 * var(--S));
+  height:calc(96 * var(--S));
   flex:0 0 auto;
   display:flex;align-items:center;justify-content:center;
   position:relative;
@@ -78,10 +78,10 @@ body{
 }
 .screen.dark .topbar{background:transparent;color:#fff;}
 .topbar .back{
-  position:absolute;left:calc(20 * var(--S));
-  width:calc(56 * var(--S));height:calc(56 * var(--S));
+  position:absolute;left:calc(14 * var(--S));
+  width:calc(78 * var(--S));height:calc(78 * var(--S));
   display:flex;align-items:center;justify-content:center;
-  font-size:calc(40 * var(--S));line-height:1;
+  font-size:calc(54 * var(--S));line-height:1;font-weight:700;
 }
 .topbar .right{
   position:absolute;right:calc(24 * var(--S));
@@ -118,19 +118,19 @@ body{
 .card{background:var(--c-card);border-radius:var(--r-card);box-shadow:var(--sh-card);}
 .row{
   display:flex;align-items:center;
-  min-height:calc(108 * var(--S));
+  min-height:calc(126 * var(--S));
   padding:0 calc(20 * var(--S)) 0 calc(30 * var(--S));
   margin-bottom:calc(8 * var(--S));
   background:var(--c-card);
   border-radius:var(--r-sm);
 }
-.row .w{flex:1;font-size:calc(28*var(--S));font-weight:600;letter-spacing:.5px;}
-.row .m{font-size:calc(22*var(--S));color:var(--c-text2);margin-left:calc(12*var(--S));}
+.row .w{flex:1;font-size:calc(31*var(--S));font-weight:600;letter-spacing:.5px;}
+.row .m{font-size:calc(23*var(--S));color:var(--c-text2);margin-left:calc(12*var(--S));}
 .row .mark{
-  width:calc(56*var(--S));height:calc(56*var(--S));
+  width:calc(66*var(--S));height:calc(66*var(--S));
   border-radius:50%;
   display:flex;align-items:center;justify-content:center;
-  background:#DDD;color:#fff;font-size:calc(30*var(--S));
+  background:#DDD;color:#fff;font-size:calc(34*var(--S));
   margin-left:calc(16*var(--S));
   transition:background var(--t-fast);
 }
@@ -181,6 +181,40 @@ body{
 .center{align-items:center;justify-content:center;}
 .gap{gap:calc(20*var(--S));}
 .pad{padding:calc(24*var(--S));}
+/* ===== 九宫格新版珠子 / START / 轮次胶囊 ===== */
+.nineDot{
+  position:absolute;transform:translate(-50%,-50%);
+  width:calc(116*var(--S));height:calc(116*var(--S));border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:calc(36*var(--S));font-weight:700;
+  background:linear-gradient(180deg,#FFD089,#F2994A);
+  border:calc(5*var(--S)) solid rgba(255,255,255,.92);
+  box-shadow:0 calc(7*var(--S)) calc(18*var(--S)) rgba(0,0,0,.22), inset 0 calc(4*var(--S)) calc(8*var(--S)) rgba(255,255,255,.5);
+  transition:transform .12s ease;
+}
+.nineDot.done{background:linear-gradient(180deg,#7BE6A8,#2FB868);}
+.nineDot:active{transform:translate(-50%,-50%) scale(.93);}
+.startBig{
+  background:linear-gradient(180deg,#FF8A7A,#E5534B)!important;
+  border:calc(5*var(--S)) solid rgba(255,255,255,.92)!important;
+  box-shadow:0 calc(10*var(--S)) calc(28*var(--S)) rgba(229,83,75,.5), inset 0 calc(5*var(--S)) calc(10*var(--S)) rgba(255,255,255,.35)!important;
+  font-size:calc(44*var(--S))!important;font-weight:800!important;letter-spacing:calc(2*var(--S));
+}
+.roundCapsule{
+  display:flex;align-items:center;gap:calc(18*var(--S));
+  padding:calc(10*var(--S)) calc(40*var(--S));
+  background:rgba(255,255,255,.16);
+  border:calc(3*var(--S)) solid rgba(255,255,255,.4);
+  border-radius:999px;color:#fff;
+  font-size:calc(33*var(--S));font-weight:600;
+  margin-bottom:calc(38*var(--S));
+}
+/* 学习卡：5 张一起铺满一屏，饱满但不溢出 */
+#learnCards{display:flex;flex-direction:column;gap:calc(18*var(--S));}
+#learnCards .wcard{flex:1 1 0;min-height:calc(112*var(--S));max-height:calc(238*var(--S));}
+/* 混组卡片：更大更好点 */
+.mixcard .mx-icon{font-size:calc(52*var(--S));}
+.mixcard .mx-name{font-size:calc(30*var(--S));}
 .muted{color:var(--c-text2);}
 .tac{text-align:center;}
 </style>
@@ -275,13 +309,13 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
 
   <!-- 顶部窗口栏（录像里有；真机 App 模式隐藏） -->
   <div id="winbar" class="topbar hide" style="height:calc(56*var(--S));background:#111;color:#fff;font-size:calc(22*var(--S));justify-content:space-between;padding:0 calc(20*var(--S));">
-    <span>kingSchool</span><span>— ✕</span>
+    <span>洗脑背刺</span><span>— ✕</span>
   </div>
 
   <!-- ①首页 -->
   <section class="screen on" id="s-home">
     <div class="topbar">
-      <span class="title-capsule">单词速记</span>
+      <span class="title-capsule">洗脑背刺</span>
       <span class="right">趣味复习</span>
     </div>
     <div class="body pad">
@@ -354,15 +388,15 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
   <section class="screen dark" id="s-grid">
     <div class="topbar">
       <span class="back" onclick="go('home')">‹</span>
-      <span style="font-size:calc(30*var(--S));">鼎校教育九宫格循环记忆法</span>
+      <span style="font-size:calc(32*var(--S));font-weight:600;">洗脑背刺</span>
     </div>
     <div class="body center flex" style="flex-direction:column;justify-content:center;">
-      <div class="flex center gap" style="margin-bottom:calc(30*var(--S));color:#fff;font-size:calc(30*var(--S));">
+      <div class="roundCapsule">
         <span>‹</span><span id="roundLabel">Round0</span><span>›</span>
       </div>
       <div style="position:relative;width:calc(520*var(--S));height:calc(520*var(--S));">
         <div id="nineRing" style="position:absolute;inset:0;"></div>
-        <button class="btn" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(180*var(--S));height:calc(180*var(--S));border-radius:50%;background:#E5534B;font-size:calc(36*var(--S));"
+        <button class="btn startBig" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(206*var(--S));height:calc(206*var(--S));border-radius:50%;"
                 onclick="go('pretest')">START</button>
       </div>
     </div>
@@ -496,6 +530,9 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
 
 </div>
 
+<!-- 隐藏：恢复存档文件选择 -->
+<input type="file" id="restoreFile" accept=".json,application/json" style="display:none;" onchange="restoreBackup(this)">
+
 <!-- ===== 弹层 ===== -->
 <div class="mask hide" id="m-vocab">
   <div class="modal">
@@ -570,7 +607,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
 .vrow .tag{font-size:calc(20*var(--S));color:#BBB;}
 .vrow.on .tag{color:var(--c-blue);}
 .cards5{display:flex;flex-direction:column;gap:calc(12*var(--S));}
-.wcard{background:#fff;border-radius:var(--r-sm);min-height:calc(116*var(--S));display:flex;align-items:center;padding:0 calc(30*var(--S));font-size:calc(30*var(--S));font-weight:600;border:calc(3*var(--S)) solid transparent;}
+.wcard{background:#fff;border-radius:var(--r-sm);min-height:calc(116*var(--S));display:flex;align-items:center;justify-content:center;padding:0 calc(30*var(--S));font-size:calc(33*var(--S));font-weight:600;border:calc(3*var(--S)) solid transparent;box-shadow:0 calc(3*var(--S)) calc(10*var(--S)) rgba(0,60,60,.06);}
 .wcard.on{border-color:var(--c-primary);color:var(--c-primary);}
 </style>
 
@@ -636,6 +673,41 @@ var S = {
 /* ---------- 持久化 ---------- */
 function save(){
   try{ localStorage.setItem('ks_state', JSON.stringify(S)); }catch(e){}
+  backupSoon();
+}
+/* 自动备份存档到 /sdcard/Download/ks_app/存档备份.json（节流 15 秒） */
+var _bkLast = 0;
+function backupSoon(){
+  try{
+    var now = Date.now();
+    if(now - _bkLast < 15000) return;
+    _bkLast = now;
+    var json = JSON.stringify({ v: 1, t: new Date().toISOString(), data: S });
+    if(window.AndroidTTS && AndroidTTS.saveBackup){ AndroidTTS.saveBackup(json); }
+  }catch(e){}
+}
+function backupNow(){
+  _bkLast = 0; backupSoon();
+  toast('💾 存档已备份到 /sdcard/Download/ks_app/存档备份.json', 2600);
+}
+function restoreBackup(inp){
+  try{
+    var f = inp.files && inp.files[0];
+    if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      try{
+        var o = JSON.parse(rd.result);
+        var data = o.data || o;
+        if(!data || !data.words) throw new Error('缺少 words 数据');
+        for(var k in data){ if(k in S) S[k] = data[k]; }
+        save();
+        toast('✅ 存档已恢复，正在刷新…', 2400);
+        setTimeout(function(){ location.reload(); }, 900);
+      }catch(e){ toast('恢复失败：' + (e.message || e), 2800); }
+    };
+    rd.readAsText(f);
+  }catch(e){ toast('恢复失败', 2000); }
 }
 /* 节流存盘：点得再快也不卡 */
 var _saveT = null;
@@ -1095,7 +1167,7 @@ var EBB = [100, 34, 28, 26, 25.5, 25.3, 25.2, 25.1, 25, 25, 25];   /* 艾宾浩�
 
 /* 通用折线图（SVG） */
 function lineSvg(series, colors, maxV, xlabels, showPct){
-  var W = 640, H = 300, padL = 74, padR = 22, padT = 24, padB = 54;
+  var W = 640, H = 400, padL = 74, padR = 22, padT = 26, padB = 60;
   var pw = W - padL - padR, ph = H - padT - padB;
   var n = series[0].length;
   function px(i){ return padL + (n > 1 ? pw * i / (n - 1) : pw / 2); }
@@ -1114,7 +1186,9 @@ function lineSvg(series, colors, maxV, xlabels, showPct){
     var pts = [];
     arr.forEach(function(v, i){ if(v != null) pts.push(px(i) + ',' + py(v)); });
     if(!pts.length) return;
-    s += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + colors[j] + '" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    s += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + colors[j] + '" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>';
+    var lp = pts[pts.length - 1].split(',');
+    s += '<circle cx="' + lp[0] + '" cy="' + lp[1] + '" r="5.5" fill="' + colors[j] + '"/>';
   });
   s += '</svg>';
   return s;
@@ -1330,6 +1404,11 @@ function renderStats(){
      + '同名单词自动跳过，不会覆盖已有进度。</div>'
      + '<input type="file" id="csvFile" accept=".csv,.txt,.tsv" style="display:none;" onchange="importCsv(this)">'
      + '<button class="btn" style="width:100%;" onclick="document.getElementById(\'csvFile\').click()">导入 CSV / TXT 词表</button>'
+     + '<div class="flex gap" style="margin-top:calc(14*var(--S));">'
+     +   '<button class="btn ghost" style="flex:1;min-height:calc(76*var(--S));font-size:calc(24*var(--S));" onclick="backupNow()">💾 备份存档</button>'
+     +   '<button class="btn ghost" style="flex:1;min-height:calc(76*var(--S));font-size:calc(24*var(--S));" onclick="document.getElementById(\'restoreFile\').click()">📥 恢复存档</button>'
+     + '</div>'
+     + '<div style="font-size:calc(20*var(--S));color:#AAA;margin-top:calc(12*var(--S));line-height:1.6;">存档自动备份到 /sdcard/Download/ks_app/存档备份.json，换机/重装后可用「恢复存档」还原进度</div>'
      + '</div>';
 
   box.innerHTML = h;
@@ -1345,11 +1424,9 @@ function renderNine(){
   var h = '';
   for(var i=0;i<8;i++){
     var ang = (i/8)*Math.PI*2 - Math.PI/2;
-    var x = 50 + 44*Math.cos(ang), y = 50 + 44*Math.sin(ang);
+    var x = 50 + 43.5*Math.cos(ang), y = 50 + 43.5*Math.sin(ang);
     var done = !!S.groupsDone[i];
-    h += '<div style="position:absolute;left:'+x+'%;top:'+y+'%;transform:translate(-50%,-50%);'
-       + 'width:calc(96*var(--S));height:calc(96*var(--S));border-radius:50%;background:'+(done?'#3ED47C':'#F2A33C')+';'
-       + 'display:flex;align-items:center;justify-content:center;color:#fff;font-size:calc(28*var(--S));font-weight:600;">'
+    h += '<div class="nineDot' + (done ? ' done' : '') + '" style="left:'+x+'%;top:'+y+'%;">'
        + (done ? '✓' : (i+1)) + '</div>';
   }
   box.innerHTML = h;
@@ -1444,7 +1521,8 @@ function pretestSubmit(){
    ④ 单词标识（S2 基础版）
    ================================================== */
 function learnList(){
-  return S.words.filter(function(w){ return w.pre === 'unknown'; });
+  var dk = dayKey();
+  return S.words.filter(function(w){ return w.pre === 'unknown' && w.skipDay !== dk; });
 }
 function learnPages(){
   return Math.max(1, Math.ceil(learnList().length / 5));
@@ -2039,16 +2117,24 @@ function postSubmit(){
   logInc('grad', right.length);
   wrong.forEach(function(w){
     var x = S.words.filter(function(o){ return o.w === w; })[0];
-    if(x) x.pre = 'unknown';
+    if(x){
+      x.pre = 'unknown';
+      /* ★ ✕ 的词今天不再出现：直接归入待学表，下一次 / 第二天再学 */
+      x.skipDay = dayKey();
+    }
   });
   save();
+  var rest = learnList().length;
   if(wrong.length){
-    toast('✓ ' + right.length + ' 个毕业进入复习 · ✕ ' + wrong.length + ' 个留在词表', 2800);
+    toast('✓ ' + right.length + ' 个毕业进复习 · ✕ ' + wrong.length + ' 个已存入待学表（下次再学）', 3200);
+  }else{
+    toast('全部 ' + right.length + ' 个单词已毕业 🎉', 2200);
+  }
+  if(rest){
     S.page = 0; S.revealed = [];
     renderLearn();
     go('learn');
   }else{
-    toast('全部 ' + right.length + ' 个单词已毕业 🎉', 2200);
     endRound();
   }
 }
@@ -2072,8 +2158,14 @@ function showMix(){
   if(!S.groupsDone) S.groupsDone = {};
   var h = '', n = 0;
   for(var gi = 0; gi < total; gi++){
-    if(!S.groupsDone[gi]) continue;          /* ★ 只列"学过的组" */
-    var cnt = list.slice(gi * 5, gi * 5 + 5).length;
+    var seg = list.slice(gi * 5, gi * 5 + 5);
+    if(!seg.length) continue;
+    /* ★ 列出：已完成检测的组，或组内已有词被学习过（待补检测）的组 —— 支持跳过检测的组一起混检 */
+    var anyTouched = seg.some(function(x){
+      return (S.seen && S.seen[x.w]) || (S.revealed && S.revealed.indexOf(x.w) >= 0);
+    });
+    if(!S.groupsDone[gi] && !anyTouched) continue;
+    var cnt = seg.length;
     n++;
     h += '<div class="mixcard" data-g="' + gi + '" onclick="toggleMix(this)">'
        +   '<span class="mx-icon">◆<b>' + cnt + '</b></span>'

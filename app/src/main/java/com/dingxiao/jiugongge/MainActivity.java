@@ -37,6 +37,17 @@ public class MainActivity extends Activity {
             if (tts == null || text == null) return;
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "w");
         }
+        @JavascriptInterface
+        public void saveBackup(String json) {
+            try {
+                File dir = new File("/sdcard/Download/ks_app");
+                if (!dir.exists()) dir.mkdirs();
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(new File(dir, "存档备份.json"));
+                fos.write(json.getBytes("UTF-8"));
+                fos.flush();
+                fos.close();
+            } catch (Exception e) { }
+        }
     }
 
     private boolean hasExtPerm() {
