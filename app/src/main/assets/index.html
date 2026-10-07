@@ -718,21 +718,93 @@ function b64ToUrl(b64){
     return url;
   }catch(e){ return b64; }
 }
-var PRE = {}, PRE_KEYS = [];   /* 预加载池：点一下就出声 */
-function prefetch(w){
+/* ---------- Web Audio 引擎：预解码 PCM 常驻内存，点击秒响 ---------- */
+var AC = null;
+function acGet(){
+  try{
+    if(!AC){
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if(!Ctx) return null;
+      AC = new Ctx();
+    }
+    if(AC.state === 'suspended'){ try{ AC.resume(); }catch(e){} }
+    return AC;
+  }catch(e){ return null; }
+}
+var BUF = {}, BUF_LD = {};
+function b64ToAb(b64){
+  try{
+    var parts = String(b64).split(',');
+    var s = parts.length > 1 ? parts[1] : parts[0];
+    var bin = atob(s);
+    var n = bin.length, u8 = new Uint8Array(n);
+    for(var i = 0; i < n; i++) u8[i] = bin.charCodeAt(i);
+    return u8.buffer;
+  }catch(e){ return null; }
+}
+function bufDecode(key, ab){
+  var ac = acGet();
+  if(!ac){ BUF_LD[key] = 0; return; }
+  try{
+    ac.decodeAudioData(
+      ab,
+      function(buf){ BUF[key] = buf; },
+      function(){ BUF_LD[key] = 0; }
+    );
+  }catch(e){ BUF_LD[key] = 0; }
+}
+function bufLoad(w){
   var key = String(w).toLowerCase();
-  if(PRE[key] || (window.AUDIO_B64 && AUDIO_B64[key])) return;
+  if(BUF[key] || BUF_LD[key]) return;
+  BUF_LD[key] = 1;
+  if(window.AUDIO_B64 && AUDIO_B64[key]){
+    var ab = b64ToAb(AUDIO_B64[key]);
+    if(ab) bufDecode(key, ab); else BUF_LD[key] = 0;
+    return;
+  }
+  try{
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(w) + '&type=2', true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function(){
+      if(xhr.response && xhr.response.byteLength){ bufDecode(key, xhr.response); }
+      else{ BUF_LD[key] = 0; legAudio(w); }
+    };
+    xhr.onerror = function(){ BUF_LD[key] = 0; legAudio(w); };
+    xhr.send();
+  }catch(e){ BUF_LD[key] = 0; legAudio(w); }
+}
+function bufPlay(key){
+  var ac = acGet();
+  if(!ac || !BUF[key]) return false;
+  try{
+    var src = ac.createBufferSource();
+    src.buffer = BUF[key];
+    src.connect(ac.destination);
+    src.start(0);
+    return true;
+  }catch(e){ return false; }
+}
+/* 回退：老式 Audio 元素预加载（XHR 跨域受限时自动启用） */
+function legAudio(w){
+  var key = String(w).toLowerCase();
+  if(PRE[key]) return;
   try{
     var a = new Audio();
     a.preload = 'auto';
     a.src = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(w) + '&type=2';
     PRE[key] = a;
     PRE_KEYS.push(key);
-    while(PRE_KEYS.length > 60){
+    while(PRE_KEYS.length > 40){
       var k = PRE_KEYS.shift();
       if(k !== key && PRE[k]){ try{ PRE[k].src = ''; }catch(e){} delete PRE[k]; }
     }
   }catch(e){}
+}
+var PRE = {}, PRE_KEYS = [];   /* 回退池：老式 Audio 元素 */
+function prefetch(w){
+  /* ⚡ 首选：Web Audio 预解码（点击秒响）；XHR 跨域失败会自动回退老式 Audio 池 */
+  bufLoad(w);
 }
 function prefetchAll(words, gap){
   if(!words || !words.length) return;
@@ -796,6 +868,9 @@ function pfScrollbind(){
 function speak(w){
   var key = String(w).toLowerCase();
   try{
+    /* ⓪ Web Audio 预解码命中 → 瞬发（最快） */
+    if(BUF[key] && bufPlay(key)) return;
+    if(!BUF[key] && !BUF_LD[key]) bufLoad(w);
     var au = null;
     if(PRE[key]){
       au = PRE[key];                                   /* ① 预加载命中 → 瞬发 */
@@ -832,22 +907,29 @@ function ttsSpeak(w){
   toast('「' + w + '」发音失败，请检查网络');
 }
 
-/* ---------- 音频预热：进页面就分批解码好，点击秒响 ---------- */
+/* ---------- 音频预热：进页面就把 PCM 解码好，点击秒响 ---------- */
 function primeAudio(){
   try{
-    if(!window.AUDIO_B64) return;
-    var keys = Object.keys(AUDIO_B64);
-    keys.forEach(function(k, i){
-      setTimeout(function(){
-        try{
-          if(WORD_AUDIO[k]) return;
-          var a = new Audio();
-          a.preload = 'auto';
-          a.src = b64ToUrl(AUDIO_B64[k]);
-          WORD_AUDIO[k] = a;
-        }catch(e){}
-      }, i * 45);          // 错开预热，不卡主线程
-    });
+    /* ① 单词音频：Web Audio 预解码（16 个内置词） */
+    if(window.AUDIO_B64){
+      var keys = Object.keys(AUDIO_B64);
+      keys.forEach(function(k, i){
+        setTimeout(function(){ bufLoad(k); }, i * 40);
+      });
+    }
+    /* ② 原版音效：Web Audio 预解码 */
+    if(window.SFX_B64){
+      var sk = Object.keys(SFX_B64);
+      sk.forEach(function(n, i){
+        setTimeout(function(){
+          var key = 'sfx:' + n;
+          if(BUF[key] || BUF_LD[key]) return;
+          BUF_LD[key] = 1;
+          var ab = b64ToAb(SFX_B64[n]);
+          if(ab) bufDecode(key, ab); else BUF_LD[key] = 0;
+        }, i * 40);
+      });
+    }
   }catch(e){}
 }
 
@@ -855,6 +937,15 @@ function primeAudio(){
 var SFX = {};
 function playSfx(name){
   try{
+    /* ⚡ Web Audio 预解码命中 → 瞬发 */
+    var sk = 'sfx:' + name;
+    if(BUF[sk]){ if(bufPlay(sk)) return; }
+    else if(!BUF_LD[sk] && window.SFX_B64 && SFX_B64[name]){
+      BUF_LD[sk] = 1;
+      var ab = b64ToAb(SFX_B64[name]);
+      if(ab) bufDecode(sk, ab); else BUF_LD[sk] = 0;
+    }
+    /* 回退：老式 Audio 元素 */
     if(!SFX[name]){
       var src = (window.SFX_B64 && SFX_B64[name])
               ? b64ToUrl(SFX_B64[name])
@@ -2315,17 +2406,17 @@ function reviewAns(ok){
   }else{
     S.rvBad = (S.rvBad || 0) + 1;
     logInc('rno');
-    if(x && x.learn === 'learning'){
-      /* 学习中的词：2 分钟后再来，不占用本轮 */
-      x.rv = x.rv || {}; x.rv.due = Date.now() + 2 * 60 * 1000; x.rv.next = x.rv.due;
-    }else if(x){
+    if(x){
+      /* 「忘了」统一处理：先转正 → FSRS 记一次遗忘 → ≥3 次回炉 / 否则回队尾滚到清光 */
+      if(x.learn === 'learning') x.learn = 'learned';
       ankiGrade(x, 'again');
-      if((x.rv.lapses || 0) >= 3){
+      var lap = (x.rv && x.rv.lapses) ? x.rv.lapses : 1;
+      if(lap >= 3){
         /* ★ 忘 ≥3 次 → 回炉：送回学新词表重新学 */
         x.learn = ''; x.pre = ''; x.rv = null;
-        toast('🔁「' + w + '」忘太多次，已送回学新重新学', 2600);
+        toast('🔁「' + w + '」忘太多次（累计 ' + lap + ' 次），已送回学新重新学', 3000);
       }else{
-        q.push(w); /* 到期的词：推到队尾，本轮内滚到清光 */
+        q.push(w); /* 回队尾，本轮滚到清光 */
       }
     }
   }
