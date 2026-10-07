@@ -700,7 +700,7 @@ function restoreBackup(inp){
         var o = JSON.parse(rd.result);
         var data = o.data || o;
         if(!data || !data.words) throw new Error('缺少 words 数据');
-        for(var k in data){ if(k in S) S[k] = data[k]; }
+        for(var k in data){ S[k] = data[k]; }   /* ★ 全量恢复：含统计/日志/快照/组进度等所有字段 */
         save();
         toast('✅ 存档已恢复，正在刷新…', 2400);
         setTimeout(function(){ location.reload(); }, 900);
