@@ -214,7 +214,7 @@ body{
 #learnCards .wcard{flex:1 1 0;min-height:calc(112*var(--S));max-height:calc(238*var(--S));}
 /* 混组卡片：更大更好点（bug3：一排 3 个） */
 #mixList{gap:calc(16*var(--S));}
-#mixList .mixcard{width:31%;min-width:0;box-sizing:border-box;}
+#mixList .mixcard{flex:0 0 29%;width:auto;min-width:0;margin:0;box-sizing:border-box;}
 .mixcard .mx-icon{font-size:calc(52*var(--S));}
 .mixcard .mx-name{font-size:calc(30*var(--S));}
 .muted{color:var(--c-text2);}
@@ -304,6 +304,11 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
 .kpi div span{font-size:calc(20*var(--S));color:#888;}
 /* 学完了 */
 .cutdone{text-align:center;padding:calc(140*var(--S)) 0;color:#E8574A;font-size:calc(48*var(--S));font-weight:600;letter-spacing:calc(4*var(--S));}
+/* ===== 每日文章 ===== */
+.daily-sec{background:#fff;border-radius:calc(20*var(--S));padding:calc(24*var(--S));margin-bottom:calc(18*var(--S));box-shadow:0 calc(2*var(--S)) calc(10*var(--S)) rgba(0,0,0,.05);}
+.daily-art{font-size:calc(27*var(--S));line-height:1.9;color:#2B2B33;white-space:pre-wrap;}
+.daily-chip{display:inline-block;padding:calc(8*var(--S)) calc(16*var(--S));margin:calc(5*var(--S)) calc(6*var(--S)) 0 0;background:#EFF7F6;border-radius:calc(12*var(--S));font-size:calc(22*var(--S));color:#1B7F7C;}
+.daily-lv{display:inline-block;padding:calc(4*var(--S)) calc(14*var(--S));border-radius:calc(12*var(--S));margin-left:calc(12*var(--S));font-size:calc(22*var(--S));}
 </style>
 </head>
 <body>
@@ -370,6 +375,15 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
           <button class="btn block" onclick="startReview()">开始复习</button>
           <button class="btn block orange" onclick="go('pretest')">学新词</button>
         </div>
+      </div>
+
+      <div class="card pad" style="margin-top:calc(16*var(--S));">
+        <div class="flex" style="justify-content:space-between;align-items:center;">
+          <b style="font-size:calc(30*var(--S));">📰 每日文章</b>
+          <span style="font-size:calc(20*var(--S));color:#999;">用今天复习的词读一篇</span>
+        </div>
+        <div id="dailyHomeTip" style="font-size:calc(23*var(--S));color:var(--c-text2);margin-top:calc(10*var(--S));">今日文章：还没生成</div>
+        <button class="btn block" style="margin-top:calc(16*var(--S));" onclick="go('daily')">去读 / 生成</button>
       </div>
 
       <div class="card pad">
@@ -500,8 +514,18 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
     </div>
   </section>
 
-  <!-- ⑨学习统计 -->
-  <!-- 复习（Anki 式卡片） -->
+  <!--⑨学习统计 -->
+
+  <!-- S9 每日文章 -->
+  <section class="screen" id="s-daily">
+    <div class="topbar">
+      <span class="back" onclick="go('home')">‹</span>
+      <span class="title-capsule">每日文章</span>
+    </div>
+    <div class="body pad" id="dailyBody"></div>
+  </section>
+
+  <!--复习（Anki 式卡片） -->
   <section class="screen dark" id="s-review">
     <div class="nav">
       <span class="back" onclick="reviewExit()">‹</span>
@@ -3115,6 +3139,7 @@ function onEnter(name){
   if(name === 'home')     renderHome();
   if(name === 'stats')    renderStats();
   if(name === 'pretest')  renderPretest();
+  if(name === 'daily')    renderDaily();
   if(name === 'learn')    renderLearn();
   if(name === 'grid')     renderNine();
   if(name === 'detail')   renderDetail();
@@ -3498,6 +3523,10 @@ function renderHome(){
   if($('planNew')) $('planNew').textContent = d.fresh;
   var _T = (S.log || {})[dayKey()] || {};   /* ★ 存档无 log 字段时不再崩溃 */
   if($('planGoal')) $('planGoal').textContent = (_T.learn || 0) + ' / ' + (S.newGoal == null ? 20 : S.newGoal);
+  if($('dailyHomeTip')){
+    var _dDone = (S.dailyA && S.dailyA.date === dayKey()) || (S.dailyB && S.dailyB.date === dayKey());
+    $('dailyHomeTip').textContent = _dDone ? '今日文章：已就绪 ✓ 点进查看' : '今日文章：还没生成';
+  }
 }
 
 function showStats(){
@@ -3602,6 +3631,231 @@ function copyTodayWords(){
   if(!ok && navigator.clipboard){ try{ navigator.clipboard.writeText(txt); ok = true; }catch(e){} }
   toast(ok ? ('✅ 已复制 ' + arr.length + ' 个词，粘贴给 AI 即可生成文章') : '复制失败：请长按手动选择', 3000);
 }
+/* ==================================================
+   S9：每日文章（A=AI生成 / B=免费抓取）
+   A：今日复习词 + 主题 + 级别 + 语法渐进 → DeepSeek 生成
+   B：Breaking News English 每日新闻（免费；按级别取，自动匹配复习词）
+   ================================================== */
+var DAILY_THEMES = ['校园生活','日常出行','网购与快递','美食餐饮','旅行与探索','运动与健康','科技与生活','朋友与社交','家人之间','工作与实习','学习与考试','天气与季节','兴趣爱好','城市里的一天'];
+var DAILY_LEVELS = ['高中','四级','六级'];
+var DAILY_LVN = { '高中': 1, '四级': 3, '六级': 5 };
+var DAILY_GR = [
+  { n: 5,    d: '用简单句为主（主谓宾结构，一般现在时/一般过去时），单句不超过12个词' },
+  { n: 10,   d: '可以加入并列句（and/but/or/so）和常见时间状语从句（when / after / before）' },
+  { n: 20,   d: '可以加入宾语从句、定语从句（that / which / who）和原因状语从句（because / since）' },
+  { n: 9999, d: '自然混合使用各类从句，可适度加入非谓语动词（-ing / to do），接近真实的英语短文' }
+];
+function dailyGrammar(){
+  var n = S.dailyN || 0;
+  for(var i = 0; i < DAILY_GR.length; i++){ if(n < DAILY_GR[i].n) return { i: i + 1, d: DAILY_GR[i].d }; }
+  return { i: 4, d: DAILY_GR[3].d };
+}
+function dailyTheme(){
+  var start = new Date(new Date().getFullYear(), 0, 0);
+  var doy = Math.floor((Date.now() - start.getTime()) / 86400000);
+  var i = (doy + (S.themeShift || 0)) % DAILY_THEMES.length;
+  return DAILY_THEMES[i];
+}
+function shiftTheme(){ S.themeShift = (S.themeShift || 0) + 1; save(); renderDaily(); }
+function setDailyLevel(lv){ S.dailyLevel = lv; save(); renderDaily(); }
+function saveDk(){ var el = $('dkInput'); if(!el) return; S.dk = el.value.trim(); save(); toast(S.dk ? '✅ Key 已保存' : '已清空 Key', 2000); }
+function dailyWords(){
+  var arr = reviewPlanList().slice(0, 30);
+  if(!arr.length){ arr = S.words.filter(function(x){ return x.learn === 'learning' || (x.rv && x.rv.reps); }).slice(0, 30); }
+  return arr;
+}
+function xhrGet(url, ok, err){
+  try{
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true); x.timeout = 25000;
+    x.onload = function(){ if(x.status >= 200 && x.status < 300) ok(x.responseText); else err && err('HTTP ' + x.status); };
+    x.onerror = function(){ err && err('网络错误'); };
+    x.ontimeout = function(){ err && err('超时'); };
+    x.send();
+  }catch(e){ err && err(e.message || '请求失败'); }
+}
+function xhrPostJson(url, headers, body, ok, err){
+  try{
+    var x = new XMLHttpRequest();
+    x.open('POST', url, true); x.timeout = 90000;
+    for(var k in headers) x.setRequestHeader(k, headers[k]);
+    x.onload = function(){ ok(x.status, x.responseText); };
+    x.onerror = function(){ err && err('网络错误'); };
+    x.ontimeout = function(){ err && err('超时（90秒）'); };
+    x.send(JSON.stringify(body));
+  }catch(e){ err && err(e.message || '请求失败'); }
+}
+function wordChipsHtml(ws){
+  var h = '<div style="margin-top:calc(10*var(--S));">';
+  (ws || []).forEach(function(w){
+    var x = wordObj(w) || {};
+    h += '<span class="daily-chip" onclick="speak(\'' + w + '\')">' + w + ' — ' + (x.m || '') + ' 🔊</span>';
+  });
+  return h + '</div>';
+}
+function renderDaily(){
+  var box = $('dailyBody'); if(!box) return;
+  var lv = S.dailyLevel || '四级';
+  var h = '';
+  /* ---- A：AI生成 ---- */
+  var aw = dailyWords();
+  var a = (S.dailyA && S.dailyA.date === dayKey()) ? S.dailyA : null;
+  h += '<div class="daily-sec"><div style="font-size:calc(28*var(--S));font-weight:600;margin-bottom:calc(16*var(--S));">✨ AI生成 · 用今天的复习词写文章</div>';
+  if(a){
+    h += '<div style="font-size:calc(21*var(--S));color:#999;margin-bottom:calc(8*var(--S));">' + a.date + ' · 主题：' + a.theme + ' · ' + a.level + '</div>';
+    h += '<div style="font-size:calc(33*var(--S));font-weight:700;margin:calc(8*var(--S)) 0 calc(14*var(--S));">' + a.title + '</div>';
+    h += '<div class="daily-art">' + a.text + '</div>';
+    h += wordChipsHtml(a.words || []);
+    h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block" onclick="genArticle()">🔁 重新生成一篇</button></div>';
+  } else {
+    var g = dailyGrammar();
+    h += '<div class="strow"><span>今日主题</span><b>' + dailyTheme() + ' <span onclick="shiftTheme()" style="color:#EE7A1E;">🎲换</span></b></div>';
+    h += '<div class="strow"><span>英语级别</span><b>';
+    DAILY_LEVELS.forEach(function(L){
+      h += '<span class="daily-lv" onclick="setDailyLevel(\'' + L + '\')" style="' + (L === lv ? 'background:#08B8B5;color:#fff;' : 'background:#EEF2F2;color:#666;') + '">' + L + '</span>';
+    });
+    h += '</b></div>';
+    h += '<div class="strow"><span>语法难度</span><b>第 ' + g.i + ' 档（自动从易到难）</b></div>';
+    h += '<div class="strow"><span>文章篇幅</span><b>140~190 词</b></div>';
+    h += '<div style="font-size:calc(22*var(--S));color:#888;line-height:1.7;">已选中 <b style="color:#0AA9A6;">' + aw.length + '</b> 个今日复习词，会尽力自然地编进文章。</div>';
+    h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block" onclick="genArticle()">✨ 生成今日文章</button></div>';
+  }
+  h += '</div>';
+  /* ---- B：免费文章 ---- */
+  var b = (S.dailyB && S.dailyB.date === dayKey()) ? S.dailyB : null;
+  h += '<div class="daily-sec"><div style="font-size:calc(28*var(--S));font-weight:600;margin-bottom:calc(16*var(--S));">📰 免费文章 · Breaking News English</div>';
+  if(b){
+    h += '<div style="font-size:calc(21*var(--S));color:#999;margin-bottom:calc(8*var(--S));">' + b.date + ' · 难度 Level ' + b.level + '（' + (BNE_LVN[b.level] || '') + '）</div>';
+    h += '<div style="font-size:calc(31*var(--S));font-weight:700;margin:calc(8*var(--S)) 0 calc(12*var(--S));">' + b.title + '</div>';
+    h += '<div class="daily-art">' + b.text + '</div>';
+    if(b.matched && b.matched.length){ h += '<div style="font-size:calc(22*var(--S));color:#0AA9A6;margin-top:calc(14*var(--S));">🎯 文中出现了你的复习词：' + b.matched.join('、') + '</div>'; }
+    h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block ghost" onclick="fetchFree(1)">🔄 换一篇</button>'
+       + '<a class="btn block" style="text-decoration:none;text-align:center;box-sizing:border-box;" href="' + b.url + '" target="_blank">原文/听力 ›</a></div>';
+  } else {
+    h += '<div style="font-size:calc(22*var(--S));color:#888;line-height:1.7;">每天一篇与复习词难度相当的实时新闻短文（免费；自动按你的级别选难度）。网页版可能被跨域限制，装成 App 后可用。</div>';
+    h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block" onclick="fetchFree(0)">📥 抓取今日免费文章</button></div>';
+  }
+  h += '</div>';
+  /* ---- Key 设置 ---- */
+  h += '<div class="daily-sec"><div style="font-size:calc(26*var(--S));font-weight:600;margin-bottom:calc(12*var(--S));">🔑 DeepSeek API Key</div>'
+     + '<input type="text" id="dkInput" value="' + (S.dk || '') + '" placeholder="sk-...（不填则 AI生成不可用）" style="width:100%;height:calc(76*var(--S));border-radius:calc(14*var(--S));border:calc(2*var(--S)) solid #E3E9E9;padding:0 calc(18*var(--S));font-size:calc(23*var(--S));box-sizing:border-box;">'
+     + '<div class="flex" style="justify-content:space-between;align-items:center;margin-top:calc(12*var(--S));">'
+     + '<span style="font-size:calc(20*var(--S));color:#AAA;flex:1;margin-right:calc(12*var(--S));">在 platform.deepseek.com 创建，仅保存在本机。每篇约几百 token。</span>'
+     + '<button class="btn ghost" style="min-height:calc(60*var(--S));font-size:calc(23*var(--S));" onclick="saveDk()">保存</button></div></div>';
+  box.innerHTML = h;
+}
+function genArticle(){
+  var key = (S.dk || '').trim();
+  if(!key){ toast('先在页面下方填入 DeepSeek API Key', 2600); return; }
+  var ws = dailyWords();
+  if(!ws.length){ toast('今天还没有复习词——先去学几个', 2600); return; }
+  var lv = S.dailyLevel || '四级';
+  var g = dailyGrammar();
+  var theme = dailyTheme();
+  var list = ws.map(function(x){ return x.w; }).join(', ');
+  var prompt = '你是中国英语学习App的专业内容作者，请写一篇用于「每日阅读」的英语短文。\n\n'
+    + '【今日主题】' + theme + '\n'
+    + '【词汇难度】中国' + lv + '英语水平：全篇不出现明显超纲的生僻词\n'
+    + '【语法要求】' + g.d + '\n'
+    + '【目标单词】尽量自然地把下面这些词用进去（允许变形：时态、复数、词性转换；实在不适合的可以不用，但要保证每个用到的词用法准确贴切）：\n' + list + '\n'
+    + '【篇幅】140~190个英文词，2~3段\n'
+    + '【硬性要求】\n'
+    + '1. 内容围绕主题，连贯自然，严禁生硬堆砌单词；\n'
+    + '2. 句子长短有变化，多用具体细节，读起来像真实文章；\n'
+    + '3. 不使用中式英语；\n'
+    + '4. 标题3~8个词。\n\n'
+    + '只输出JSON（不要其他任何文字）：{"title":"...","text":"...(段落之间用\\n\\n分隔)"}';
+  toast('生成中…请稍等（约10~30秒）', 4000);
+  xhrPostJson('https://api.deepseek.com/chat/completions',
+    { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 1.15, max_tokens: 1100 },
+    function(status, txt){
+      if(status < 200 || status >= 300){
+        var msg = 'HTTP ' + status;
+        try{ var ej = JSON.parse(txt); if(ej.error && ej.error.message) msg = ej.error.message; }catch(e){}
+        toast('生成失败：' + msg, 4200); return;
+      }
+      var content = '';
+      try{ content = JSON.parse(txt).choices[0].message.content; }catch(e){}
+      var obj = null;
+      try{ obj = JSON.parse(content); }catch(e){
+        var mm = content.match(/\{[\s\S]*\}/); if(mm){ try{ obj = JSON.parse(mm[0]); }catch(e2){} }
+      }
+      if(!obj || !obj.text){ toast('模型返回格式异常，再点一次试试', 3200); return; }
+      S.dailyA = { date: dayKey(), theme: theme, level: lv, title: (obj.title || 'Daily Reading'), text: String(obj.text), words: ws.map(function(x){ return x.w; }), ts: Date.now() };
+      S.dailyN = (S.dailyN || 0) + 1;
+      save(); renderDaily();
+      toast('✅ 今日文章已生成', 2200);
+    },
+    function(err){ toast('网络错误：' + err + '（浏览器里可能被跨域限制，装成 App 后可用）', 4200); });
+}
+/* ---- B：Breaking News English ---- */
+var BNE_BASE = 'https://breakingnewsenglish.com/';
+var BNE_LVN = { 0: '入门', 1: '初级', 2: '初中级', 3: '中级', 4: '中高级', 5: '高级', 6: '高级' };
+function parseBneHome(html){
+  var out = [], m;
+  var re = /<a\s+href="(\d{4}\/\d{6}-[a-z0-9-]+\.html)"\s+title="([^"]+)"[^>]*>([^<]{8,140})<\/a>/g;
+  while((m = re.exec(html)) !== null && out.length < 8){
+    out.push({ path: m[1], snippet: m[2], title: m[3].trim() });
+  }
+  var lv = {}, mm;
+  var lre = /href="(\d{4}\/\d{6}-[a-z0-9-]+?)(?:-([0-6]))?\.html"[^>]*>\s*Level\s*([0-6])\s*</g;
+  while((mm = lre.exec(html)) !== null){
+    var b = mm[1] + '.html', n = parseInt(mm[3], 10);
+    if(!lv[b]) lv[b] = [];
+    if(lv[b].indexOf(n) < 0) lv[b].push(n);
+  }
+  out.forEach(function(it){
+    var arr = lv[it.path] ? lv[it.path].slice().sort(function(a, b){ return a - b; }) : [3];
+    it.levels = arr; it.maxLv = arr[arr.length - 1];
+  });
+  return out;
+}
+function pickBneLevel(levels, target){
+  var best = levels[0], bd = 99;
+  levels.forEach(function(L){ var d = Math.abs(L - target); if(d < bd){ bd = d; best = L; } });
+  return best;
+}
+function extractBne(html){
+  var m = html.match(/<div id="primary"[^>]*>[\s\S]*?<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
+  if(!m) m = html.match(/<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
+  if(!m) return '';
+  return m[1].replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(new RegExp('&' + 'quot;', 'g'), String.fromCharCode(34)).replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&rsquo;/g, '’').replace(/&lsquo;/g, '‘')
+    .replace(/&ldquo;/g, '“').replace(/&rdquo;/g, '”').replace(/&mdash;/g, '—').replace(/&hellip;/g, '…')
+    .trim();
+}
+function fetchFree(next){
+  toast('正在抓取…', 2000);
+  xhrGet(BNE_BASE, function(html){
+    var items = parseBneHome(html);
+    if(!items.length){ toast('抓取失败：页面结构变化', 3000); return; }
+    var ws = dailyWords();
+    items.forEach(function(it){
+      var t = (it.title + ' ' + it.snippet).toLowerCase(), sc = 0;
+      ws.forEach(function(x){ if(t.indexOf(x.w.toLowerCase()) >= 0) sc++; });
+      it.sc = sc;
+    });
+    items.sort(function(a, b){ return b.sc - a.sc; });
+    var idx = (S.bneIdx || 0);
+    var item = items[idx % items.length];
+    if(next) idx++;
+    S.bneIdx = idx;
+    var lv = pickBneLevel(item.levels, DAILY_LVN[S.dailyLevel || '四级'] || 3);
+    var url = (lv === item.maxLv) ? (BNE_BASE + item.path) : (BNE_BASE + item.path.replace(/\.html$/, '-' + lv + '.html'));
+    xhrGet(url, function(html2){
+      var text = extractBne(html2);
+      if(!text){ toast('正文提取失败，换一篇试试', 3000); return; }
+      var low = text.toLowerCase(), matched = [];
+      ws.forEach(function(x){ if(matched.length < 12 && low.indexOf(x.w.toLowerCase()) >= 0) matched.push(x.w); });
+      S.dailyB = { date: dayKey(), title: item.title, text: text, url: url, level: lv, matched: matched };
+      save(); renderDaily();
+      toast('✅ 免费文章抓好了', 2000);
+    }, function(err){ toast('抓取文章失败：' + err, 3200); });
+  }, function(err){ toast('抓取失败：' + err + '（浏览器里可能被跨域限制，装成 App 后可用）', 4200); });
+}
+
 function setGoal(kind, v){
   v = parseInt(v, 10) || 0;
   if(kind === 'new') S.newGoal = v;
