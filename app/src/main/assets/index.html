@@ -219,6 +219,12 @@ body{
 .mixcard .mx-name{font-size:calc(30*var(--S));}
 .muted{color:var(--c-text2);}
 .tac{text-align:center;}
+
+/* REVIEW_NAV_V8 复习页顶栏：加大返回键（用户反馈太小） */
+#s-review .nav{display:flex;align-items:center;gap:calc(8*var(--S));padding:calc(10*var(--S)) calc(14*var(--S));min-height:calc(96*var(--S));}
+#s-review .nav .back{font-size:calc(64*var(--S));line-height:1;min-width:calc(96*var(--S));min-height:calc(88*var(--S));display:flex;align-items:center;justify-content:center;cursor:pointer;}
+#s-review .nav .title{font-size:calc(30*var(--S));color:#fff;}
+#s-review .nav .right{margin-left:auto;font-size:calc(26*var(--S));color:rgba(255,255,255,.9);}
 </style>
 <style>
 /* ★ 禁止移动端双击缩放（Chrome 会无视 user-scalable=no，必须用 touch-action） */
@@ -3124,8 +3130,10 @@ function showMask(id){ $(id).classList.remove('hide'); }
 function hideMask(id){ $(id).classList.add('hide'); }
 
 /* ---------- 路由 ---------- */
-var SCREENS = ['home','grid','pretest','learn','detail','scissor','done','posttest','review','stats'];
+var SCREENS = ['home','grid','pretest','learn','detail','scissor','done','posttest','review','stats','daily'];
 function go(name, noSave){
+  if(SCREENS.indexOf(name) < 0) name = 'home';   /* 兜底：未知页面回主页（防白屏） */
+  var prev = S.screen;
   S.screen = name;
   SCREENS.forEach(function(id){
     var el = $('s-' + id);
@@ -3134,7 +3142,33 @@ function go(name, noSave){
   if(!noSave) save();
   onEnter(name);
   try{ prefetchForPage(name); }catch(e){}
+  if(name !== prev && !go._quiet){
+    try{ history.pushState({ screen: name }, '', '#' + name); }catch(e){}
+  }
 }
+/* ---------- 系统返回键：history 栈 + popstate ---------- */
+function applyScreen(name){
+  if(SCREENS.indexOf(name) < 0) name = 'home';
+  S.screen = name;
+  SCREENS.forEach(function(id){
+    var el = $('s-' + id);
+    if(el) el.classList.toggle('on', id === name);
+  });
+  save();
+  onEnter(name);
+  try{ prefetchForPage(name); }catch(e){}
+}
+window.addEventListener('popstate', function(e){
+  var name = (e.state && e.state.screen) || (location.hash ? location.hash.replace('#', '') : 'home');
+  if(SCREENS.indexOf(name) < 0) name = 'home';
+  if(S.screen === 'review'){ reviewExit(); return; }   /* 从复习页返回：走原确认流程 */
+  applyScreen(name);
+});
+window.__appBack = function(){
+  if(S.screen === 'home') return 'EXIT';
+  try{ history.back(); }catch(e){}
+  return '';
+};
 function onEnter(name){
   if(name === 'home')     renderHome();
   if(name === 'stats')    renderStats();
@@ -5367,7 +5401,14 @@ function initApp(){
 
   renderVocab();
   renderNine();
+  /* 历史栈初始化：home 打底（系统返回键逐级回退，见 go / popstate） */
+  try{ history.replaceState({ screen: 'home' }, '', '#home'); }catch(e){}
+  go._quiet = true;
   go(S.screen || 'home', true);
+  go._quiet = false;
+  try{
+    if((S.screen || 'home') !== 'home'){ history.pushState({ screen: S.screen }, '', '#' + S.screen); }
+  }catch(e){}
   showMask('m-vocab');
 
   /* S8：把「21天抗遗忘 / 开始复习」两个按钮绑到记忆曲线复习 */
