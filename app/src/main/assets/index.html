@@ -241,6 +241,18 @@ body{
 .darch>summary{cursor:pointer;font-size:calc(24*var(--S));color:#B0733A;font-weight:600;}
 .ditem{margin-top:calc(12*var(--S));border:calc(1.5*var(--S)) solid #EEE;border-radius:calc(12*var(--S));padding:calc(12*var(--S));}
 .ditem>summary{cursor:pointer;font-size:calc(22*var(--S));color:#666;}
+
+/* ★v8.2.2 文章区：单词列表 / 翻页 / 中文意思 */
+.daily-chips{display:flex;flex-wrap:wrap;gap:calc(8*var(--S));margin-top:calc(12*var(--S));}
+.daily-chip{display:inline-block;background:rgba(8,184,181,.10);color:#0A8F8C;border-radius:999px;padding:calc(6*var(--S)) calc(16*var(--S));font-size:calc(17*var(--S));font-weight:600;cursor:pointer;}
+.daily-chip.more{background:#F1F3F6;color:#66707A;}
+.dchip-hide{display:none;}
+.daily-chips.open .dchip-hide{display:inline;}
+.daily-chips.open .more{display:none;}
+.dflip{display:flex;gap:calc(10*var(--S));margin:calc(6*var(--S)) 0 calc(10*var(--S));}
+.flipbtn{flex:1;border:calc(2*var(--S)) solid #D6DCE5;background:#fff;color:#556;border-radius:calc(12*var(--S));padding:calc(10*var(--S)) 0;font-size:calc(18*var(--S));font-weight:700;cursor:pointer;}
+.flipbtn.on{background:#08B8B5;border-color:#08B8B5;color:#fff;}
+.dzh{line-height:1.9;color:#333;}
 </style>
 <style>
 /* ★ 禁止移动端双击缩放（Chrome 会无视 user-scalable=no，必须用 touch-action） */
@@ -3500,19 +3512,31 @@ function _uniqForms(list){
   return out;
 }
 function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-/* ★ bug4：把文章里出现的复习词包成绿色高亮 */
+/* ★ bug4：把文章里出现的复习词包成绿色高亮 +★v8.2.2 点击看释义 */
 function hlWords(text, words){
   var t = escH(text);
   if(!words || !words.length) return t;
-  var forms = [];
-  words.forEach(function(w){ forms = forms.concat(wordForms(w)); });
-  forms = _uniqForms(forms);
+  var fmap = {};
+  words.forEach(function(w){
+    wordForms(w).forEach(function(f){ if(!fmap[f]) fmap[f] = w; });
+  });
+  var forms = _uniqForms(Object.keys(fmap));
   if(!forms.length) return t;
   var re;
   try{
     re = new RegExp('\\b(' + forms.map(_reEsc).join('|') + ')\\b', 'gi');
   }catch(e){ return t; }
-  return t.replace(re, '<span class="hlw">$1</span>');
+  return t.replace(re, function(mm){
+    var w0 = fmap[String(mm).toLowerCase()] || mm;
+    return '<span class="hlw" onclick="wQuick(\'' + w0 + '\')">' + mm + '</span>';
+  });
+}
+/* ★v8.2.2：点击文中单词 → 弹释义 + 发音 */
+function wQuick(w0){
+  var x = wordObj(w0) || {};
+  var m = x.m || '（词库中暂无此词释义）';
+  try{ speak(w0); }catch(e){}
+  toast(w0 + '：' + m, 3800);
 }
 /* 文章里是否用到了这个词（覆盖率统计） */
 function textHasWord(text, w){
@@ -3836,13 +3860,65 @@ function xhrPostJson(url, headers, body, ok, err){
     x.send(JSON.stringify(body));
   }catch(e){ err && err(e.message || '请求失败'); }
 }
-function wordChipsHtml(ws){
-  var h = '<div style="margin-top:calc(10*var(--S));">';
-  (ws || []).forEach(function(w){
-    var x = wordObj(w) || {};
-    h += '<span class="daily-chip" onclick="speak(\'' + w + '\')">' + w + ' — ' + (x.m || '') + ' 🔊</span>';
+/* ★v8.2.2：文章翻页 + 免费文章一键翻译（mymemory 免费接口） */
+function setDailyFlip(n){ S.dailyFlip = n; save(); renderDaily(); }
+function setDailyBFlip(n){ S.dailyBFlip = n; save(); renderDaily(); }
+function bneTranslate(){
+  var b = S.dailyB; if(!b || !b.text) return;
+  if(b._tx === 1){ toast('正在翻译…稍等', 1500); return; }
+  b._tx = 1; save();
+  toast('正在翻译…（免费接口，长文分段进行，约几秒）', 2200);
+  /* 免费接口单次有长度上限：按句子切分、每段 ~420 字符 */
+  var sents = b.text.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [b.text];
+  var parts = [], cur = '';
+  sents.forEach(function(s){ s = s.trim(); if(!s) return;
+    if((cur + ' ' + s).length > 420){ if(cur) parts.push(cur); cur = s; }
+    else { cur = cur ? cur + ' ' + s : s; }
   });
+  if(cur) parts.push(cur);
+  var out = [], idx = 0;
+  function step(){
+    if(idx >= parts.length){
+      b.translation = out.join(''); b._tx = 0; save(); S.dailyBFlip = 2; renderDaily();
+      toast('✅ 翻译好了', 1800); return;
+    }
+    fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(parts[idx]) + '&langpair=en|zh-CN')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var t = d && d.responseData && d.responseData.translatedText;
+        if(!t || String(t).length < 1) throw 0;
+        out.push(String(t)); idx++; step();
+      })
+      .catch(function(){
+        if(out.length){
+          b.translation = out.join(''); b._tx = 0; save(); S.dailyBFlip = 2; renderDaily();
+          toast('部分翻译好了（网络或额度中断）', 2400);
+        } else {
+          b._tx = 0; save(); toast('翻译失败：网络或免费额度问题，稍后再试', 2600);
+        }
+      });
+  }
+  step();
+}
+/* ★v8.2.2：单词列表紧凑化（点击看释义），超24个折叠 */
+function wordChipsHtml(ws){
+  var list = ws || [];
+  var h = '<div class="daily-chips">';
+  list.slice(0, 24).forEach(function(w){
+    h += '<span class="daily-chip" onclick="wQuick(\'' + w + '\')">' + w + '</span>';
+  });
+  if(list.length > 24){
+    h += '<span class="daily-chip more" onclick="chipsMore(this)">…还有 ' + (list.length - 24) + ' 个 ›</span>';
+    h += '<span class="dchip-hide">';
+    list.slice(24).forEach(function(w){
+      h += '<span class="daily-chip" onclick="wQuick(\'' + w + '\')">' + w + '</span>';
+    });
+    h += '</span>';
+  }
   return h + '</div>';
+}
+function chipsMore(el){
+  if(el && el.parentNode) el.parentNode.classList.toggle('open');
 }
 function renderDaily(){
   var box = $('dailyBody'); if(!box) return;
@@ -3856,8 +3932,16 @@ function renderDaily(){
   if(a){
     h += '<div style="font-size:calc(21*var(--S));color:#999;margin-bottom:calc(8*var(--S));">' + a.date + ' · 主题：' + a.theme + ' · ' + a.level + (a.covered ? ' · 覆盖 ' + a.covered.length + '/' + (a.words || []).length + ' 词' : '') + '</div>';
     h += '<div style="font-size:calc(33*var(--S));font-weight:700;margin:calc(8*var(--S)) 0 calc(14*var(--S));">' + escH(a.title) + '</div>';
-    h += '<div class="daily-art">' + hlWords(a.text, a.words || []) + '</div>';
-    if(a.translation){ h += '<details class="dtrans"><summary>📖 中文翻译</summary><div class="dtrans-body">' + escH(a.translation) + '</div></details>'; }
+    var fl = S.dailyFlip || 1;
+    h += '<div class="dflip">'
+       + '<button class="flipbtn' + (fl === 1 ? ' on' : '') + '" onclick="setDailyFlip(1)">🔤 英文原文</button>'
+       + '<button class="flipbtn' + (fl === 2 ? ' on' : '') + '" onclick="setDailyFlip(2)">📖 中文意思</button>'
+       + '</div>';
+    if(fl === 2){
+      h += '<div class="daily-art dzh">' + (a.translation ? escH(a.translation) : '这版文章没带翻译（旧版生成的）。点「重新生成」会带上全文中文～') + '</div>';
+    }else{
+      h += '<div class="daily-art">' + hlWords(a.text, a.words || []) + '</div>';
+    }
     h += wordChipsHtml(a.words || []);
     if(a.missed && a.missed.length){ h += '<div style="font-size:calc(21*var(--S));color:#B98A2B;margin-top:calc(10*var(--S));line-height:1.6;">⚠ 未覆盖的词：' + a.missed.join('、') + '<br><span style="color:#999;">（绿色=文中的复习词；可点「重新生成」再试）</span></div>'; }
     h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block" onclick="genArticle()">🔁 重新生成一篇</button></div>';
@@ -3892,7 +3976,16 @@ function renderDaily(){
   if(b){
     h += '<div style="font-size:calc(21*var(--S));color:#999;margin-bottom:calc(8*var(--S));">' + b.date + ' · 难度 Level ' + b.level + '（' + (BNE_LVN[b.level] || '') + '）</div>';
     h += '<div style="font-size:calc(31*var(--S));font-weight:700;margin:calc(8*var(--S)) 0 calc(12*var(--S));">' + escH(b.title) + '</div>';
-    h += '<div class="daily-art">' + hlWords(b.text, aw.map(function(x){ return x.w; })) + '</div>';
+    var bf = S.dailyBFlip || 1;
+    h += '<div class="dflip">'
+       + '<button class="flipbtn' + (bf === 1 ? ' on' : '') + '" onclick="setDailyBFlip(1)">🔤 英文原文</button>'
+       + '<button class="flipbtn' + (bf === 2 ? ' on' : '') + '" onclick="setDailyBFlip(2)">📖 中文意思</button>'
+       + '</div>';
+    if(bf === 2){
+      h += '<div class="daily-art dzh">' + (b.translation ? escH(b.translation) : '还没有译文。<span onclick="bneTranslate()" style="color:#08B8B5;font-weight:700;text-decoration:underline;">点这里一键翻译（免费）</span>') + '</div>';
+    }else{
+      h += '<div class="daily-art">' + hlWords(b.text, aw.map(function(x){ return x.w; })) + '</div>';
+    }
     if(b.matched && b.matched.length){ h += '<div style="font-size:calc(22*var(--S));color:#0AA9A6;margin-top:calc(14*var(--S));">🎯 文中出现了你的复习词：' + b.matched.join('、') + '</div>'; }
     h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block ghost" onclick="fetchFree(1)">🔄 换一篇</button>'
        + '<a class="btn block" style="text-decoration:none;text-align:center;box-sizing:border-box;" href="' + b.url + '" target="_blank">原文/听力 ›</a></div>';
