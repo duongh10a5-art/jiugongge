@@ -169,11 +169,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) {
-            web.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (web == null) { super.onBackPressed(); return; }
+        web.evaluateJavascript("window.__appBack ? window.__appBack() : 'EXIT'", new ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String v) {
+                if (v == null || v.contains("EXIT")) { MainActivity.super.onBackPressed(); }
+            }
+        });
     }
 
     @Override
