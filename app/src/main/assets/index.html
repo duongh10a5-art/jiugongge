@@ -3542,22 +3542,33 @@ function sentsHtml(w){
   }
   return h + '</div>';
 }
-/* 句子朗读（TTS，独立于单词音频体系） */
+/* 句子朗读：App 原生 TTS 优先 → 浏览器 TTS → 有道在线音频 */
 function speakStr(el){
   var s = el && el.getAttribute ? (el.getAttribute('data-s') || '') : '';
   if(!s) return;
+  try{ if(window.AndroidTTS && AndroidTTS.speak){ AndroidTTS.speak(s); return; } }catch(e){}
+  var spoke = false;
   try{
     if(window.speechSynthesis){
       speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(s);
       u.lang = 'en-US'; u.rate = 0.92;
       var vs = speechSynthesis.getVoices() || [];
-      for(var i = 0; i < vs.length; i++){
-        if(/en[-_]?(US|GB)/i.test(vs[i].lang)){ u.voice = vs[i]; break; }
+      if(vs.length){
+        for(var i = 0; i < vs.length; i++){
+          if(/en[-_]?(US|GB)/i.test(vs[i].lang)){ u.voice = vs[i]; break; }
+        }
+        speechSynthesis.speak(u); spoke = true;
       }
-      speechSynthesis.speak(u);
     }
   }catch(e){}
+  if(!spoke){
+    /* 最后回退：有道在线发音（浏览器场景） */
+    try{
+      var au = new Audio('https://dict.youdao.com/dictvoice?type=2&audio=' + encodeURIComponent(s));
+      au.play();
+    }catch(e){}
+  }
 }
 function countUnk(){
   return S.words.filter(function(w){ return w.pre === 'unknown'; }).length;
@@ -3960,6 +3971,43 @@ function genArticle(){
       toast('✅ 已生成 · 覆盖 ' + covered.length + '/' + names.length + ' 个复习词', 3000);
     },
     function(err){ toast('网络错误：' + err + '（浏览器里可能被跨域限制，装成 App 后可用）', 4200); });
+}
+/* ---- B：Breaking News English（补回：此前被 genArticle 替换误删） ---- */
+var BNE_BASE = 'https://breakingnewsenglish.com/';
+var BNE_LVN = { 0: '入门', 1: '初级', 2: '初中级', 3: '中级', 4: '中高级', 5: '高级', 6: '高级' };
+function parseBneHome(html){
+  var out = [], m;
+  var re = /<a\s+href="(\d{4}\/\d{6}-[a-z0-9-]+\.html)"\s+title="([^"]+)"[^>]*>([^<]{8,140})<\/a>/g;
+  while((m = re.exec(html)) !== null && out.length < 8){
+    out.push({ path: m[1], snippet: m[2], title: m[3].trim() });
+  }
+  var lv = {}, mm;
+  var lre = /href="(\d{4}\/\d{6}-[a-z0-9-]+?)(?:-([0-6]))?\.html"[^>]*>\s*Level\s*([0-6])\s*</g;
+  while((mm = lre.exec(html)) !== null){
+    var b = mm[1] + '.html', n = parseInt(mm[3], 10);
+    if(!lv[b]) lv[b] = [];
+    if(lv[b].indexOf(n) < 0) lv[b].push(n);
+  }
+  out.forEach(function(it){
+    var arr = lv[it.path] ? lv[it.path].slice().sort(function(a, b){ return a - b; }) : [3];
+    it.levels = arr; it.maxLv = arr[arr.length - 1];
+  });
+  return out;
+}
+function pickBneLevel(levels, target){
+  var best = levels[0], bd = 99;
+  levels.forEach(function(L){ var d = Math.abs(L - target); if(d < bd){ bd = d; best = L; } });
+  return best;
+}
+function extractBne(html){
+  var m = html.match(/<div id="primary"[^>]*>[\s\S]*?<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
+  if(!m) m = html.match(/<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
+  if(!m) return '';
+  return m[1].replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(new RegExp('&' + 'quot;', 'g'), String.fromCharCode(34)).replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&rsquo;/g, '’').replace(/&lsquo;/g, '‘')
+    .replace(/&ldquo;/g, '“').replace(/&rdquo;/g, '”').replace(/&mdash;/g, '—').replace(/&hellip;/g, '…')
+    .trim();
 }
 function fetchFree(next){
   toast('正在抓取…', 2000);
@@ -4422,7 +4470,7 @@ function renderLearn(){
     h += '<div class="wcard" data-w="' + w.w + '" onclick="wordTap(this)"'
        +      ' style="flex-direction:column;justify-content:center;align-items:center;padding:calc(14*var(--S)) calc(20*var(--S));">'
        +   '<div style="font-size:calc(30*var(--S));font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + w.w + '</div>'
-       +   '<div class="cn" style="display:' + (shown ? 'block' : 'none') + ';font-size:calc(22*var(--S));font-weight:400;color:#8A8A94;margin-top:calc(8*var(--S));">' + escH(w.m) + sentsHtml(w.w) + '</div>'
+       + '<div class="cn" style="display:' + (shown ? 'block' : 'none') + ';font-size:calc(22*var(--S));font-weight:400;color:#8A8A94;margin-top:calc(8*var(--S));">' + escH(w.m) + '</div>'
        + '</div>';
   });
   $('learnCards').innerHTML = h;
@@ -5330,17 +5378,18 @@ function isGrad(x){
   return x.learn === 'learned' || x.learn === 'learning' || (!x.learn && x.rv && x.rv.reps > 0);
 }
 
-/* 组今日复习队列 */
+/* 组今日复习队列（★每日复习上限 = 设置里的复习目标 revGoal，默认 100） */
 function buildReviewQueue(){
   var now = Date.now();
   var learn = [], due = [];
   S.words.forEach(function(x){
-    if(!x.rv || !x.rv.next) return;
+    if(!x || !x.rv || !x.rv.next) return;
     if(x.learn === 'learning'){ if(x.rv.next <= now) learn.push(x.w); return; }
     if(!isGrad(x)) return;
     if(x.rv.next <= now) due.push(x.w);
   });
-  return learn.concat(due);
+  var cap = Math.max(1, S.revGoal || 100);
+  return learn.concat(due).slice(0, cap);
 }
 
 /* 开始复习 */
@@ -5358,8 +5407,10 @@ function startReview(){
       var tip = nx && nx.rv.next > Date.now()
         ? '最近的 ' + Math.max(1, Math.round((nx.rv.next - Date.now()) / 3600000)) + ' 小时后到期'
         : '还有词在学习中';
-      showConfirm('当前没有到期的复习词（' + tip + '）。提前复习全部已学的 ' + learned.length + ' 个词？', function(){
-        rvStart(learned.map(function(x){ return x.w; }));
+      var _cap = Math.max(1, S.revGoal || 100);
+      var _pick = learned.slice(0, _cap);
+      showConfirm('当前没有到期的复习词（' + tip + '）。按复习目标提前复习 ' + _pick.length + ' 个词？', function(){
+        rvStart(_pick.map(function(x){ return x.w; }));
       });
     }else{
       toast('还没有学过的单词，先去 START 学习吧', 2400);
