@@ -3570,7 +3570,13 @@ function sentsHtml(w){
 function speakStr(el){
   var s = el && el.getAttribute ? (el.getAttribute('data-s') || '') : '';
   if(!s) return;
-  try{ if(window.AndroidTTS && AndroidTTS.speak){ AndroidTTS.speak(s); return; } }catch(e){}
+  try{
+    if(window.AndroidTTS && AndroidTTS.speak){
+      AndroidTTS.speak(s);
+      toast('🔊 已发送到系统语音（如无声请检查系统TTS引擎）', 2000);
+      return;
+    }
+  }catch(e){}
   var spoke = false;
   try{
     if(window.speechSynthesis){
@@ -4489,6 +4495,8 @@ function pretestSubmit(){
   if(n === 0){ toast('请至少选择一个单词'); return; }
   if(n > S.MAX_SELECT){ toast('单次最多选择 ' + S.MAX_SELECT + ' 个单词（9 组）'); return; }
   S.page = 0; S.learnFocus = '';
+  /* ★v8.2.3：前检测打✓（认识）的词 → 记入本批预备池，等「学新后检测」与✗词一起检测后再划入复习 */
+  S.batchKnown = S.words.filter(function(x){ return x.pre === 'known'; }).map(function(x){ return x.w; });
   /* ★ 锁定本批次（bug5）：只有本次标记 ✘ 的词进入本轮学习/检测，历史词不再滚进来 */
   S.batch = S.words.filter(function(w){ return w.pre === 'unknown'; }).map(function(w){ return w.w; });
   /* ★ bug1-A：选完点「开始识记」→ 自动打乱本批全部单词顺序 */
@@ -5040,13 +5048,16 @@ function cutRemove(w, row){
      ✕ → 留在词表继续学；✔ → 从学新词表剔除、进入复习（记忆曲线）
    ================================================== */
 function startFinalCheck(){
-  /* ★ bug5：只列「本批次」的单词（本次这一轮标记 ✘ 的），不再把历史学过的词全拉进来 */
+  /* ★v8.2.3：后检测 = 本批 ✗词 + 前检测 ✓词（一起检测，最后再划入复习） */
+  var pool = [], seen = {};
+  function push(ww){ if(ww && !seen[ww]){ seen[ww] = 1; pool.push(ww); } }
   var src = (S.batch && S.batch.length) ? batchWords() : S.words.filter(function(x){
     return x.pre === 'unknown';
   });
-  var pool = [];
-  src.forEach(function(x){
-    if(x.pre === 'unknown' && pool.indexOf(x.w) < 0) pool.push(x.w);
+  src.forEach(function(x){ if(x.pre === 'unknown') push(x.w); });
+  (S.batchKnown || []).forEach(function(ww){
+    var x = wordObj(ww);
+    if(x && !isGrad(x) && x.pre !== 'unknown') push(ww);
   });
   if(!pool.length){ toast('本轮没有选中/标记的单词'); return; }
   S.postPool = pool;
@@ -5160,6 +5171,7 @@ function postSubmit(){
       x.wrongTimes = (x.wrongTimes || 0) + 1;
     }
   });
+  S.batchKnown = [];
   save();
   var rest = learnList().length;
   if(wrong.length){
