@@ -295,6 +295,19 @@ body{
 .wsmix-bar{display:flex;gap:calc(12*var(--S));margin-top:calc(16*var(--S));}
 .wsmix-bar .btn{flex:1;}
 .wsmix-no{background:linear-gradient(180deg,#F79A3C,#EE7A1E)!important;color:#fff!important;}
+
+.rvprev{width:calc(620*var(--S));max-width:88vw;background:rgba(255,255,255,.08);border:calc(2*var(--S)) solid rgba(255,255,255,.14);border-radius:calc(18*var(--S));padding:calc(14*var(--S)) calc(18*var(--S));margin-bottom:calc(20*var(--S));box-sizing:border-box;}
+.rvp-top{font-size:calc(18*var(--S));color:rgba(255,255,255,.5);}
+.rvp-w{font-size:calc(32*var(--S));font-weight:700;color:#fff;margin-top:calc(4*var(--S));}
+.rvp-m{font-size:calc(22*var(--S));color:rgba(255,255,255,.85);margin-top:calc(4*var(--S));line-height:1.5;word-break:break-word;}
+.rvp-btns{display:flex;gap:calc(12*var(--S));margin-top:calc(10*var(--S));}
+.rvp-btn{flex:1;height:calc(60*var(--S));border-radius:calc(14*var(--S));border:none;font-size:calc(22*var(--S));font-weight:600;background:rgba(255,255,255,.14);color:#fff;}
+.rvp-btn.on{background:#E8A33D;color:#3A2A0A;}
+.rvp-btn[disabled]{opacity:.55;}
+
+/* v8.6需求5：出题设置胶囊 */
+.qchip{display:inline-block;padding:calc(10*var(--S)) calc(22*var(--S));border-radius:calc(999*var(--S));background:#F2F6F6;color:#666;font-size:calc(22*var(--S));border:calc(2*var(--S)) solid transparent;line-height:1.1;}
+.qchip.on{background:#E6F7F6;color:#08B8B5;border-color:#08B8B5;font-weight:700;}
 </style>
 <style>
 /* ★ 禁止移动端双击缩放（Chrome 会无视 user-scalable=no，必须用 touch-action） */
@@ -652,6 +665,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
       <span class="right" id="rvProg">剩 0 词</span>
     </div>
     <div class="body center flex" style="flex-direction:column;justify-content:center;">
+      <div class="rvprev hide" id="rvPrev"></div>
       <div class="rvcard" onclick="reviewFlip()">
         <div class="rvw" id="rvWord">—</div>
         <div class="rvm hide" id="rvMean"></div>
@@ -3183,7 +3197,12 @@ var S = {
   gkSel: null,                      // ★语法训练：选中的语法点
   gkQuiz: null,                     // ★语法训练：当前答题会话
   wordsCat: 'irr',                  // ★词单：当前分类
-  notesDone: {}                     // ★词单：已掌握标记
+  notesDone: {},                   // ★词单：已掌握标记
+  quizNum: 5,                      // v8.6需求5：每次出题数量
+  quizDiff: '中等',                // v8.6需求5：出题难度（简单/中等/困难）
+  quizBank: [],                    // v8.6需求5：题库（保存生成过的题）
+  rvPrev: null,                    // v8.6需求2：复习页「上一词」
+  gkBig: null                      // v8.6需求6：语法大题会话
 };
 
 /* ★ 状态自愈：老存档缺字段时补齐，杜绝 "undefined.xxx" 崩溃（白屏元凶） */
@@ -4128,7 +4147,7 @@ function copyTodayWords(){
    A：今日复习词 + 主题 + 级别 + 语法渐进 → DeepSeek 生成
    B：Breaking News English 每日新闻（免费；按级别取，自动匹配复习词）
    ================================================== */
-var DAILY_THEMES = ['校园生活','日常出行','网购与快递','美食餐饮','旅行与探索','运动与健康','科技与生活','朋友与社交','家人之间','工作与实习','学习与考试','天气与季节','兴趣爱好','城市里的一天'];
+var DAILY_THEMES = ['校园生活','日常出行','网购与快递','美食餐饮','旅行与探索','运动与健康','科技与生活','朋友与社交','家人之间','工作与实习','学习与考试','天气与季节','兴趣爱好','城市里的一天','历史与哲学','哲学与生活','文学'];
 var DAILY_LEVELS = ['高中','四级','六级'];
 var DAILY_LVN = { '高中': 1, '四级': 3, '六级': 5 };
 var DAILY_GR = [
@@ -4270,7 +4289,16 @@ function renderDaily(){
     }
     h += wordChipsHtml(a.words || []);
     if(a.missed && a.missed.length){ h += '<div style="font-size:calc(21*var(--S));color:#B98A2B;margin-top:calc(10*var(--S));line-height:1.6;">⚠ 未覆盖的词：' + a.missed.join('、') + '<br><span style="color:#999;">（绿色=文中的复习词；可点「重新生成」再试）</span></div>'; }
-    h += '<div class="flex gap" style="margin-top:calc(16*var(--S));">'
+    h += '<div class="card pad" style="margin-top:calc(16*var(--S));">'
+       + '<div style="font-size:calc(22*var(--S));color:#666;margin-bottom:calc(8*var(--S));">📝 出题设置</div>'
+       + '<div class="flex gap" style="flex-wrap:wrap;">'
+       + [5, 10, 15, 20].map(function(n){ return '<button class="flipbtn' + ((S.quizNum || 5) === n ? ' on' : '') + '" onclick="setQuizNum(' + n + ')">' + n + ' 题</button>'; }).join('')
+       + '</div>'
+       + '<div class="flex gap" style="flex-wrap:wrap;margin-top:calc(10*var(--S));">'
+       + [['简单', 0], ['中等', 1], ['困难', 2]].map(function(d){ return '<button class="flipbtn' + ((S.quizDiff || '中等') === d[0] ? ' on' : '') + '" onclick="setQuizDiffIdx(' + d[1] + ')">' + d[0] + '</button>'; }).join('')
+       + '</div>'
+       + '</div>'
+       + '<div class="flex gap" style="margin-top:calc(12*var(--S));">'
        + '<button class="btn block" onclick="genArticle()">🔁 重新生成</button>'
        + '<button class="btn block" style="background:#7A5AF8;" onclick="startArticleQuiz()">📝 针对此文出题</button>'
        + '</div>';
@@ -4293,7 +4321,8 @@ function renderDaily(){
     aHist.forEach(function(p){
       h += '<details class="ditem"><summary>' + p.date + ' · ' + escH(p.title) + (p.covered ? ' · ' + p.covered.length + ' 词' : '') + '</summary>'
          + '<div class="daily-art">' + hlWords(p.text, p.words || []) + '</div>'
-         + (p.translation ? '<details class="dtrans"><summary>📖 中文翻译</summary><div class="dtrans-body">' + escH(p.translation) + '</div></details>' : '')
+         + (p.translation ? '<details class="dtrans"><summary>📖中文翻译</summary><div class="dtrans-body">' + escH(p.translation) + '</div></details>' : '')
+         + (p.grammar ? '<details class="dtrans"><summary>🎨语法着色（句子色块）</summary><div class="dtrans-body">' + gkAnnotate(p.grammar) + '</div></details>' : '')
          + '</details>';
     });
     h += '</details>';
@@ -4323,6 +4352,20 @@ function renderDaily(){
     h += '<div class="flex gap" style="margin-top:calc(16*var(--S));"><button class="btn block" onclick="fetchFree(0)">📥 抓取今日免费文章</button></div>';
   }
   h += '</div>';
+  /* ---- v8.6需求5：我的题库 ---- */
+  var bank = S.quizBank || [];
+  if(bank.length){
+    h += '<div class="daily-sec" style="margin-top:calc(18*var(--S));"><div style="font-size:calc(26*var(--S));font-weight:600;margin-bottom:calc(12*var(--S));">📚 我的题库（' + bank.length + ' 套 · 存最近30套）</div>';
+    bank.slice(0, 10).forEach(function(b, bi){
+      h += '<div class="card pad" style="margin-bottom:calc(10*var(--S));">'
+         + '<div style="font-size:calc(23*var(--S));font-weight:600;line-height:1.5;">' + escH(b.title || '练习') + ' <span style="font-weight:400;color:#999;font-size:calc(19*var(--S));">' + escH(b.diff || '') + ' · ' + (b.num || 0) + '题' + (b.done ? ' · 上次 ' + Math.round((b.right || 0) / Math.max(1, (b.num || 1)) * 100) + '%' : ' · 未做') + '</span></div>'
+         + '<div class="flex gap" style="margin-top:calc(10*var(--S));">'
+         + '<button class="btn block" style="min-height:calc(56*var(--S));font-size:calc(21*var(--S));" onclick="bankDo(' + bi + ')">▶ 开始/重做</button>'
+         + '<button class="btn block ghost" style="min-height:calc(56*var(--S));font-size:calc(21*var(--S));max-width:38%;" onclick="bankDel(' + bi + ')">删除</button>'
+         + '</div></div>';
+    });
+    h += '</div>';
+  }
   /* ---- Key 设置 ---- */
   h += '<div class="daily-sec"><div style="font-size:calc(26*var(--S));font-weight:600;margin-bottom:calc(12*var(--S));">🔑 DeepSeek API Key</div>'
      + '<input type="text" id="dkInput" value="' + (S.dk || '') + '" placeholder="sk-...（不填则 AI生成不可用）" style="width:100%;height:calc(76*var(--S));border-radius:calc(14*var(--S));border:calc(2*var(--S)) solid #E3E9E9;padding:0 calc(18*var(--S));font-size:calc(23*var(--S));box-sizing:border-box;">'
@@ -5775,14 +5818,44 @@ function isDue(x){
 /* ==================================================
    CSV / TXT 词表导入（兼容 Anki 导出格式：单词,释义 每行一条）
    ================================================== */
+/* v8.6需求7：标准CSV行解析（引号内的逗号、转义引号都能正确处理） */
+function splitCsvLine(line){
+  var out = [], cur = '', inQ = false;
+  for(var i = 0; i < line.length; i++){
+    var ch = line.charAt(i);
+    if(inQ){
+      if(ch === '"'){
+        if(line.charAt(i + 1) === '"'){ cur += '"'; i++; }
+        else inQ = false;
+      }else cur += ch;
+    }else{
+      if(ch === '"') inQ = true;
+      else if(ch === ','){ out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+/* v8.6需求7：清洗释义（去HTML标签/实体、压缩空白） */
+function cleanCsvText(t){
+  t = String(t || '');
+  t = t.replace(/<br\s*\/?>/gi, ' ').replace(/<\/div>/gi, ' ').replace(/<[^>]+>/g, '');
+  t = t.replace(/&nbsp;/gi, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return t.replace(/\s+/g, ' ').trim();
+}
 /* 解析一行导入文本 → [单词,释义]（Tab / 逗号 / 分号 / 全角 / 空格粘连 全支持） */
 function parseWordLine(line){
   line = String(line || '').trim();
   if(!line) return null;
+  var cells = null;
+  if(line.indexOf('"') >= 0){ cells = splitCsvLine(line).map(cleanCsvText); }
   line = line.replace(/，/g, ',').replace(/；/g, ';').replace(/：/g, ':');
   line = line.replace(/^[0-9]+[.、)]\s*/, '');
   var w = '', m = '';
-  if(line.indexOf('\t') >= 0){
+  if(cells && cells.length >= 2 && cells[0]){
+    w = cells[0]; m = cells.slice(1).join('，');
+  }else if(line.indexOf('\t') >= 0){
     var t = line.split('\t');
     w = t[0]; m = t.slice(1).join(' ');
   }else if(line.indexOf(',') >= 0){
@@ -5805,7 +5878,7 @@ function parseWordLine(line){
     }
   }
   w = String(w || '').trim().replace(/^"|"$/g, '').replace(/^[0-9]+[.、)]\s*/, '');
-  m = String(m || '').trim().replace(/^"|"$/g, '');
+  m = cleanCsvText(String(m || '').replace(/^"|"$/g, ''));
   if(!w) return null;
   if(/^(word|单词|front|正面|英文|term)$/i.test(w)) return null;
   if(!/^[A-Za-z0-9]/.test(w)) return { bad: 1 };
@@ -5816,7 +5889,7 @@ function importCsv(inp){
   if(!f) return;
   var fr = new FileReader();
   fr.onload = function(){
-    var txt = String(fr.result || '');
+    var txt = String(fr.result || '').replace(/^\uFEFF/, '');   /* v8.6需求7：去掉BOM */
     var lines = txt.split(/\r?\n/).filter(function(l){ return l.trim(); });
     var arr = [], bad = 0, noMean = 0;
     lines.forEach(function(line){
@@ -5826,21 +5899,43 @@ function importCsv(inp){
       if(!p[1]) noMean++;
       arr.push({ w: p[0], m: p[1] });
     });
-    if(!arr.length){ toast('没解析到单词，检查一下格式（每行：单词 释义）', 3200); return; }
-    var have = {};
-    S.words.forEach(function(x){ have[x.w] = 1; });
-    var add = 0;
+    /* v8.6需求7：列顺序智能纠正（中文在前、英文在后 → 自动对调） */
     arr.forEach(function(x){
-      if(have[x.w]) return;
-      S.words.push({ w: x.w, m: x.m, pre: '', learn: '', rv: null });
-      have[x.w] = 1;
-      add++;
+      if(/[\u4e00-\u9fa5]/.test(x.w) && /^[A-Za-z][A-Za-z'’\- .]*$/.test(String(x.m || '').trim())){
+        var tmp = x.w; x.w = String(x.m).trim(); x.m = tmp.trim();
+      }
     });
-    save();
-    updatePreCount();
-    var extra = '';
-    if(noMean > add * 0.5 && add > 2){ extra = '（⚠️多数行没解析出释义，检查分隔符）'; }
-    toast('导入 ' + arr.length + ' 行 · 新增 ' + add + ' 个词' + extra, 3600);
+    if(!arr.length){ toast('没解析到单词，检查一下格式（每行：单词 释义）', 3200); return; }
+    /* v8.6需求7：导入前预览（Anki式，确认后才写入） */
+    var prev = '';
+    arr.slice(0, 4).forEach(function(x, i){
+      prev += '<div style="font-size:calc(21*var(--S));color:#555;margin-top:calc(6*var(--S));text-align:left;">'
+           + (i + 1) + '. <b>' + escH(x.w) + '</b> — ' + (x.m ? escH(x.m.length > 40 ? x.m.slice(0, 40) + '…' : x.m) : '<span style="color:#C0392B;">（无释义）</span>')
+           + '</div>';
+    });
+    var msg = '<div style="font-size:calc(23*var(--S));line-height:1.7;">📥 识别到 <b>' + arr.length + '</b> 行' + (noMean ? '（无释义 ' + noMean + ' 行）' : '') + '</div>'
+            + prev
+            + '<div style="font-size:calc(20*var(--S));color:#999;margin-top:calc(12*var(--S));">已有单词会用新释义更新；确认后才写入。</div>';
+    showConfirm(msg, function(){
+      var have = {};
+      S.words.forEach(function(x){ have[x.w] = 1; });
+      var add = 0, upd = 0;
+      arr.forEach(function(x){
+        if(have[x.w]){
+          var ex = S.words.filter(function(o){ return o.w === x.w; })[0];
+          if(ex && x.m && ex.m !== x.m){ ex.m = x.m; upd++; }
+          return;
+        }
+        S.words.push({ w: x.w, m: x.m, pre: '', learn: '', rv: null });
+        have[x.w] = 1;
+        add++;
+      });
+      save();
+      updatePreCount();
+      var extra = '';
+      if(noMean > add * 0.5 && add > 2){ extra = '（⚠️多数行没解析出释义，检查分隔符）'; }
+      toast('导入 ' + arr.length + ' 行 · 新增 ' + add + ' 个词 · 更新 ' + upd + ' 个释义' + extra, 3800);
+    });
   };
   fr.readAsText(f, 'utf-8');
   inp.value = '';
@@ -5909,10 +6004,23 @@ function startReview(){
 function rvStart(words){
   S.rvQueue = shuffle(words.slice());
   S.rvGood = 0; S.rvBad = 0; S.rvHard = 0; S.rvEasy = 0; S.rvViewed = 0;
+  S.rvPrev = null;   /* v8.6需求2：新一轮不显示上一词 */
   save();
   go('review');
 }
 
+/* v8.6需求2：调整「上一词」的评级（忘记/模糊，只能选一次） */
+function rvPrevSet(sel){
+  var p = S.rvPrev;
+  if(!p || !p.w || p.sel) return;
+  var x = S.words.filter(function(o){ return o.w === p.w; })[0];
+  if(x){ ankiGrade(x, sel === 1 ? 'again' : 'hard'); }
+  p.sel = sel;
+  save();
+  renderReview();
+  toast(sel === 1 ? '已把「' + p.w + '」记为忘记' : '已把「' + p.w + '」记为模糊', 2000);
+}
+/* 渲染当前卡 */
 /* 渲染当前卡 */
 function renderReview(){
   var q = S.rvQueue || [];
@@ -5925,6 +6033,23 @@ function renderReview(){
   $('rvHint').classList.remove('hide');
   $('rvProg').textContent = '剩 ' + q.length + ' 词';
   $('rvStat').textContent = '😀 ' + (S.rvGood || 0) + ' · 🤔 ' + (S.rvHard || 0) + ' · 😵 ' + (S.rvBad || 0) + (S.rvEasy ? ' · ⚡ ' + S.rvEasy : '');
+  /* v8.6需求2：上一词回顾（单词 + 释义 + 忘记/模糊） */
+  var _pv = $('rvPrev');
+  if(_pv){
+    if(S.rvPrev && S.rvPrev.w){
+      _pv.classList.remove('hide');
+      _pv.innerHTML = '<div class="rvp-top">上一词</div>'
+        + '<div class="rvp-w">' + escH(S.rvPrev.w) + '</div>'
+        + '<div class="rvp-m">' + escH(cnOf(S.rvPrev.w)) + '</div>'
+        + '<div class="rvp-btns">'
+        + '<button class="rvp-btn' + (S.rvPrev.sel === 1 ? ' on' : '') + '"' + (S.rvPrev.sel ? ' disabled' : '') + ' onclick="rvPrevSet(1)">😵 忘记</button>'
+        + '<button class="rvp-btn' + (S.rvPrev.sel === 2 ? ' on' : '') + '"' + (S.rvPrev.sel ? ' disabled' : '') + ' onclick="rvPrevSet(2)">🤔 模糊</button>'
+        + '</div>';
+    }else{
+      _pv.classList.add('hide');
+      _pv.innerHTML = '';
+    }
+  }
 }
 
 /* 点卡片 → 释义 + 发音 */
@@ -5956,13 +6081,8 @@ function reviewAns(grade){
     if(x){
       if(x.learn === 'learning') x.learn = 'learned';
       ankiGrade(x, 'again');
-      var lap = (x.rv && x.rv.lapses) ? x.rv.lapses : 1;
-      if(lap >= 3){
-        x.learn = ''; x.pre = ''; x.rv = null;
-        toast('🔁「' + w + '」忘太多次（累计 ' + lap + ' 次），已送回学新重新学', 3000);
-      }else{
-        q.push(w);
-      }
+      q.push(w);
+      /* v8.6需求1：取消遗忘多次回炉——忘的词继续在本轮队列里滚，不再送回学新 */
     }
   }else if(eff === 2){
     S.rvHard = (S.rvHard || 0) + 1;
@@ -5979,6 +6099,9 @@ function reviewAns(grade){
     logInc('ryes');
     if(x){ if(x.learn === 'learning') x.learn = 'learned'; ankiGrade(x, 'easy'); }
   }
+  /* v8.6需求2：这个词出现在下一张卡上方（含释义 + 忘记/模糊） */
+  S.rvPrev = { w: w, sel: 0 };
+  S.rvPrev = { w: w, sel: 0 };   /* v8.6需求2：刚答的词显示在下一张卡上方 */
   save();
   if(!q.length) rvFinish(); else renderReview();
 }
@@ -6018,7 +6141,7 @@ function endRound(){
 }
 function postSubmit_old_placeholder_removed(){}
 function showConfirm(text, cb){
-  $('confirmText').textContent = text;
+  $('confirmText').innerHTML = text;   /* v8.6需求7：支持HTML预览 */
   $('confirmOk').onclick = function(){ hideMask('m-confirm'); if(cb) cb(); };
   showMask('m-confirm');
 }
@@ -6266,6 +6389,7 @@ var GK_POINTS = [
 function renderGrammar(){
   var box = $('grammarBody'); if(!box) return;
   if(S.xl){ renderXlate(); return; }
+  if(S.gkBig){ renderGkBig(); return; }   /* v8.6需求6：语法大题 */
   if(S.gkQuiz && !S.gkQuiz.done){ renderQuiz(); return; }
   if(S.gkQuiz && S.gkQuiz.done){ renderQuizResult(); return; }
   if(!S.gkSel) S.gkSel = [];
@@ -6299,6 +6423,9 @@ function renderGrammar(){
      + '<div class="flex gap" style="margin-top:calc(12*var(--S));">'
      + '<button class="btn block" style="background:#7A5AF8;" onclick="startXlate(\'en2cn\')">✍️ 英译中练习</button>'
      + '<button class="btn block" style="background:#7A5AF8;" onclick="startXlate(\'cn2en\')">✍️ 中译英练习</button>'
+     + '</div>'
+     + '<div class="flex" style="margin-top:calc(12*var(--S));">'
+     + '<button class="btn block" style="background:#2F9E8F;" onclick="startGkBig()">✍️ 语法大题（填空 / 改写 / 翻译）</button>'
      + '</div><div id="gkMsg" style="margin-top:calc(12*var(--S));font-size:calc(22*var(--S));color:#999;text-align:center;"></div>';
   box.innerHTML = h;
 }
@@ -6456,12 +6583,12 @@ function startGkQuiz(){
   if(!key){ toast('先在「每日文章」页填 DeepSeek API Key', 3200); return; }
   if(!S.gkSel || !S.gkSel.length){ toast('至少选一个语法点', 2200); return; }
   var pts = GK_POINTS.filter(function(p){ return S.gkSel.indexOf(p.id) >= 0; });
-  var nQ = Math.min(12, Math.max(6, pts.length * 3));
+  var nQ = S.quizNum || Math.min(12, Math.max(6, pts.length * 3));   /* v8.6需求5：按设置题量 */
   var list = pts.map(function(p, i){ return (i + 1) + '. ' + p.t + '——' + p.d; }).join('\n');
   var prompt = '你是中国高中英语（高考方向）的语法出题老师。请根据下面的语法点清单，出一套 ' + nQ + ' 道单项选择题（只有单选题）。\n\n'
     + '【语法点清单】\n' + list + '\n\n'
     + '【要求】\n'
-    + '1. 难度：中国高考英语零基础入门到中等难度，句子简洁，用词不超纲（高考3500词以内）；\n'
+    + '1. 难度：' + (S.quizDiff === '简单' ? '基础（句子短、词汇简单、考点单一）' : S.quizDiff === '困难' ? '高考压轴难度（长难句、多重从句、干扰项极具迷惑性）' : '高考中等难度，句子简洁，用词不超纲（高考3500词以内）') + '；\n'
     + '2. 每道题只考清单里的一个语法点，考点分布均匀；\n'
     + '3. 每题4个选项，只有1个正确；干扰项要有典型迷惑性（比如学生常犯的错误）；\n'
     + '4. 每题附中文解析，解释为什么对、为什么错；并附「tr」字段：题干句子（填空处按正确答案补全后）的整句中文翻译；\n'
@@ -6494,6 +6621,104 @@ function startGkQuiz(){
     function(err){ toast('网络错误：' + err + '（浏览器里可能被跨域限制，装成 App 后可用）', 4200); if(msg) msg.textContent = '网络错误：' + err; });
 }
 
+/* ========== v8.6需求6：语法大题（填空/改写/翻译） ========== */
+function startGkBig(){
+  var key = (S.dk || '').trim();
+  if(!key){ toast('先在「每日文章」页填 DeepSeek API Key', 3200); return; }
+  if(!S.gkSel || !S.gkSel.length){ toast('先勾选至少一个语法点', 2400); return; }
+  var pts = GK_POINTS.filter(function(p){ return S.gkSel.indexOf(p.id) >= 0; });
+  var nQ = Math.max(4, Math.min(12, S.quizNum || 6));
+  var diff = S.quizDiff || '中等';
+  var list = pts.map(function(p, i){ return (i + 1) + '. ' + p.t + '——' + p.d; }).join('\n');
+  var prompt = '你是中国高中英语（高考方向）的语法老师。请根据下面的语法点清单，出 ' + nQ + ' 道「语法大题」（非选择题，要求考生动笔写答案）。\n\n'
+    + '【语法点清单】\n' + list + '\n\n'
+    + '【题型要求】三种题型混合出（每小题型至少1题）：\n'
+    + '1. fill：用括号内单词的正确形式填空（题干里用 ___ 表示空，括号提示如 (be)）；\n'
+    + '2. rewrite：按要求改写句子（如改为被动语态、合并为定语从句、改为强调句等，要求写在题干里）；\n'
+    + '3. trans：根据中文提示翻译成英文（必须用上指定语法点）。\n\n'
+    + '【要求】\n'
+    + '1. 难度：' + (diff === '简单' ? '基础，句子短、词汇简单' : diff === '困难' ? '高考压轴难度，句子较长、结构复杂' : '高考中等难度') + '；\n'
+    + '2. 每题给出：type、q（题干）、hint（中文提示）、answer（标准答案）、explain（中文解析）；\n'
+    + '3. 只输出JSON：{"questions":[{"type":"fill","q":"He ___ (be) late yesterday.","hint":"一般过去时","answer":"was","explain":"yesterday表示过去，be用was"}]}';
+  toast('语法大题生成中…（' + nQ + ' 题 · ' + diff + '，约10~40秒）', 3600);
+  var msg = $('gkMsg'); if(msg) msg.textContent = 'AI 出大题中…请稍等';
+  xhrPostJson('https://api.deepseek.com/chat/completions',
+    { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 3200 },
+    function(status, txt){
+      if(status < 200 || status >= 300){
+        var m = 'HTTP ' + status;
+        try{ var ej = JSON.parse(txt); if(ej.error && ej.error.message) m = ej.error.message; }catch(e){}
+        toast('生成失败：' + m, 4200); if(msg) msg.textContent = '生成失败：' + m; return;
+      }
+      var content = '';
+      try{ content = JSON.parse(txt).choices[0].message.content; }catch(e){}
+      var obj = null;
+      try{ obj = JSON.parse(content); }catch(e){
+        var mm = content.match(/\{[\s\S]*\}/); if(mm){ try{ obj = JSON.parse(mm[0]); }catch(e2){} }
+      }
+      if(!obj || !obj.questions || !obj.questions.length){ toast('返回格式异常，再点一次试试', 3200); if(msg) msg.textContent = '返回格式异常'; return; }
+      var qs = obj.questions.filter(function(q){ return q && q.q; });
+      if(!qs.length){ toast('返回内容为空，再试一次', 3200); if(msg) msg.textContent = '返回内容为空'; return; }
+      S.gkBig = { qs: qs, i: 0, checked: false, right: 0, wrong: 0, done: false,
+                  sel: (S.gkSel || []).slice(), ts: Date.now(), log: [] };
+      save();
+      renderGrammar();
+    },
+    function(err){ toast('网络错误：' + err, 4200); if(msg) msg.textContent = '网络错误：' + err; });
+}
+function renderGkBig(){
+  var box = $('grammarBody'); if(!box) return;
+  var B = S.gkBig;
+  var h = '';
+  if(B.done){
+    var total = B.qs.length;
+    var acc = total ? Math.round(B.right / total * 100) : 0;
+    h += '<div class="card pad" style="text-align:center;">'
+       + '<div style="font-size:calc(52*var(--S));font-weight:700;color:' + (acc >= 80 ? '#2FB868' : acc >= 60 ? '#E8A33D' : '#E5534B') + ';">' + acc + '%</div>'
+       + '<div style="font-size:calc(26*var(--S));color:#666;margin-top:calc(8*var(--S));">自评答对 ' + B.right + ' / ' + total + ' 题</div></div>'
+       + '<div class="flex gap" style="margin-top:calc(18*var(--S));">'
+       + '<button class="btn block" onclick="gkBigExit()">↩ 返回</button>'
+       + '<button class="btn block orange" onclick="startGkBig()">🔁 再来一组</button></div>';
+    box.innerHTML = h;
+    return;
+  }
+  var q = B.qs[B.i];
+  var tname = q.type === 'rewrite' ? '✏️ 句子改写' : q.type === 'trans' ? '🔁 翻译' : '📝 填空';
+  h += '<div style="display:flex;justify-content:space-between;font-size:calc(24*var(--S));color:#666;margin-bottom:calc(10*var(--S));">'
+     + '<span>' + tname + ' · 第 <b style="color:#0AA9A6;">' + (B.i + 1) + '</b> / ' + B.qs.length + ' 题</span>'
+     + '<span>✅ ' + B.right + ' · ❌ ' + B.wrong + '</span></div>';
+  h += '<div class="card pad"><div style="font-size:calc(27*var(--S));line-height:1.75;">'
+     + escH(q.q).replace(/_{2,}/g, '<b style="color:#0AA9A6;">______</b>') + '</div>'
+     + (q.hint ? '<div style="font-size:calc(21*var(--S));color:#B98A2B;margin-top:calc(8*var(--S));">💡 ' + escH(q.hint) + '</div>' : '')
+     + '</div>';
+  if(!B.checked){
+    h += '<div class="card pad" style="margin-top:calc(14*var(--S));background:#F7FAFA;">'
+       + '<div style="font-size:calc(21*var(--S));color:#888;line-height:1.6;">在纸上/心里写出答案，再点下面看标准答案</div></div>'
+       + '<div class="flex" style="margin-top:calc(14*var(--S));"><button class="btn block orange" onclick="gkBigCheck()">我写好了，看答案 ›</button></div>';
+  }else{
+    h += '<div class="card pad" style="margin-top:calc(14*var(--S));border-left:calc(6*var(--S)) solid #08B8B5;">'
+       + '<div style="font-size:calc(20*var(--S));color:#999;">标准答案</div>'
+       + '<div style="font-size:calc(29*var(--S));line-height:1.7;color:#0A7E7C;font-weight:600;margin:calc(8*var(--S)) 0;word-break:break-word;">' + escH(q.answer || '') + '</div>'
+       + '<div style="font-size:calc(22*var(--S));color:#555;line-height:1.7;">' + escH(q.explain || '') + '</div></div>'
+       + '<div style="font-size:calc(22*var(--S));color:#999;text-align:center;margin:calc(14*var(--S)) 0 calc(8*var(--S));">对照一下，你写得怎么样？</div>'
+       + '<div class="flex gap">'
+       + '<button class="btn block" style="background:#2FB868;" onclick="gkBigMark(1)">✅ 对了</button>'
+       + '<button class="btn block" style="background:#E5534B;" onclick="gkBigMark(0)">❌ 错了</button></div>';
+  }
+  box.innerHTML = h;
+}
+function gkBigCheck(){ var B = S.gkBig; if(!B) return; B.checked = true; renderGkBig(); }
+function gkBigMark(ok){
+  var B = S.gkBig; if(!B || !B.checked) return;
+  if(!B.log) B.log = [];   /* v8.6修复：兼容无log的旧会话 */
+  if(ok) B.right++; else B.wrong++;
+  B.log.push({ i: B.i, ok: !!ok });
+  if(B.i + 1 >= B.qs.length){ B.done = true; save(); renderGkBig(); return; }
+  B.i++; B.checked = false;
+  save(); renderGkBig();
+}
+function gkBigExit(){ S.gkBig = null; save(); renderGrammar(); }
 function renderQuiz(){
   var box = $('grammarBody'); if(!box) return;
   var Q = S.gkQuiz;
@@ -6550,6 +6775,12 @@ function nextGk(){
 function renderQuizResult(){
   var box = $('grammarBody'); if(!box) return;
   var Q = S.gkQuiz;
+  /* v8.6需求5：题库成绩回写 */
+  if(Q && Q.fromBank != null && S.quizBank && S.quizBank[Q.fromBank]){
+    var _bb = S.quizBank[Q.fromBank];
+    _bb.right = Q.right; _bb.wrong = Q.wrong; _bb.done = true; _bb.last = Date.now();
+    save();
+  }
   var total = Q.qs.length;
   var acc = Math.round(Q.right / total * 100);
   var h = '';
@@ -6613,24 +6844,46 @@ function gkAnnotate(str){
 }
 
 /* ★ 文章结合出题：基于今天这篇每日文章的语法现象出5道题（复用语法答题系统） */
+/* ===== v8.6需求5：出题设置与题库 ===== */
+function setQuizNum(n){ S.quizNum = n; save(); renderDaily(); }
+function setQuizDiffIdx(i){ S.quizDiff = ['简单', '中等', '困难'][Math.max(0, Math.min(2, i | 0))] || '中等'; save(); renderDaily(); }
+function bankDo(i){
+  var b = (S.quizBank || [])[i];
+  if(!b){ toast('这套题不见了', 2000); return; }
+  S.gkQuiz = { qs: b.qs, i: 0, picked: -1, right: 0, wrong: 0, done: false,
+               sel: ['题库·' + (b.title || '')], ts: Date.now(), log: [], fromBank: i };
+  save();
+  go('grammar');
+}
+function bankDel(i){
+  var b = (S.quizBank || [])[i]; if(!b) return;
+  showConfirm('删除这套题（' + (b.num || 0) + ' 题）？', function(){
+    S.quizBank.splice(i, 1); save(); renderDaily(); toast('已删除', 1600);
+  });
+}
 function startArticleQuiz(){
   var key = (S.dk || '').trim();
   if(!key){ toast('先在页面上填 DeepSeek API Key', 3200); return; }
   var a = (S.dailyA && S.dailyA.date === dayKey()) ? S.dailyA : null;
   if(!a || !a.text){ toast('先生成今天的文章', 2200); return; }
-  var prompt = '你是高中英语语法出题老师。下面是一篇学生刚读过的英语短文。请基于这篇文章出 5 道单项选择题，考这篇文章里出现的语法现象（句子成分、名词性/定语/状语从句、时态、被动、非谓语等）。\n\n'
+  var nQ = S.quizNum || 5;                      /* v8.6需求5：题量可调 */
+  var diff = S.quizDiff || '中等';               /* v8.6需求5：难度可调 */
+  var diffD = diff === '简单' ? '基础语法、句子较短、四个选项差异明显（适合刚入门）'
+            : diff === '困难' ? '高考压轴题难度：长难句、多重从句与复杂结构，干扰项极具迷惑性'
+            : '高考中等难度：句子中等长度，干扰项有典型迷惑性';
+  var prompt = '你是高中英语语法出题老师。下面是一篇学生刚读过的英语短文。请基于这篇文章出 ' + nQ + ' 道单项选择题，考这篇文章里出现的语法现象（句子成分、名词性/定语/状语从句、时态、被动、非谓语等）。\n\n'
     + '【文章】\n' + a.text + '\n\n'
     + '【要求】\n'
     + '1. 题目必须与文章相关：可以直接引用文章里的句子来填空或考语法结构；\n'
     + '2. 每题4个选项1个正确，附中文解析（explain），并附「tr」字段：题干句子的整句中文翻译；\n'
-    + '3. 难度适配高考零基础到中等；\n'
+    + '3. 难度：' + diffD + '；\n'
     + '4. 考点尽量分散（不要重复考同一个点）。\n\n'
     + '只输出JSON（不要其他任何文字）：{"questions":[{"q":"题干","options":["A","B","C","D"],"answer":0,"explain":"解析","point":"考点","tr":"整句中文翻译"}]}\n'
     + 'answer 是正确选项下标（0-3）。';
-  toast('基于文章出题中…约10~30秒', 3600);
+  toast('基于文章出题中…（' + nQ + ' 题 · ' + diff + '，约10~40秒）', 3600);
   xhrPostJson('https://api.deepseek.com/chat/completions',
     { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-    { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 2600 },
+    { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 3200 },
     function(status, txt){
       if(status < 200 || status >= 300){
         var m = 'HTTP ' + status;
@@ -6644,8 +6897,14 @@ function startArticleQuiz(){
         var mm = content.match(/\{[\s\S]*\}/); if(mm){ try{ obj = JSON.parse(mm[0]); }catch(e2){} }
       }
       if(!obj || !obj.questions || !obj.questions.length){ toast('返回格式异常，再点一次试试', 3200); return; }
+      /* v8.6需求5：写入题库（最多30套） */
+      if(!S.quizBank) S.quizBank = [];
+      S.quizBank.unshift({ ts: Date.now(), title: (a.title || 'Daily Reading'), theme: a.theme || '', diff: diff,
+                           num: obj.questions.length, qs: obj.questions,
+                           right: 0, wrong: 0, done: false, last: 0 });
+      if(S.quizBank.length > 30) S.quizBank.length = 30;
       S.gkQuiz = { qs: obj.questions, i: 0, picked: -1, right: 0, wrong: 0, done: false,
-                   sel: ['文章·' + (a.title || 'Daily')], ts: Date.now(), log: [], fromArticle: true };
+                   sel: ['文章·' + (a.title || 'Daily')], ts: Date.now(), log: [], fromArticle: true, fromBank: 0 };
       save();
       go('grammar');
     },
