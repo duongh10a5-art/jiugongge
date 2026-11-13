@@ -308,6 +308,9 @@ body{
 /* v8.6需求5：出题设置胶囊 */
 .qchip{display:inline-block;padding:calc(10*var(--S)) calc(22*var(--S));border-radius:calc(999*var(--S));background:#F2F6F6;color:#666;font-size:calc(22*var(--S));border:calc(2*var(--S)) solid transparent;line-height:1.1;}
 .qchip.on{background:#E6F7F6;color:#08B8B5;border-color:#08B8B5;font-weight:700;}
+
+/* v8.6.8 单词后音标 */
+.wi-ph{font-size:.78em;color:#9A9A9A;font-weight:400;margin-left:4px;letter-spacing:0;}
 </style>
 <style>
 /* ★ 禁止移动端双击缩放（Chrome 会无视 user-scalable=no，必须用 touch-action） */
@@ -437,6 +440,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
         <span class="flex gap">
           <button class="btn ghost" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">陪伴学习</button>
           <button class="btn ghost" onclick="openVocabPicker()" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">选择词库</button>
+          <button class="btn ghost" onclick="openAnkiImport()" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">📥 Anki</button>
         </span>
       </div>
 
@@ -673,10 +677,10 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
         <div class="rvhint" id="rvHint">点一下看释义 + 发音</div>
       </div>
       <div class="flex gap" style="width:calc(620*var(--S));max-width:88vw;margin-top:calc(34*var(--S));">
-        <button class="btn block" style="background:linear-gradient(#F2846A,#E5534B);font-size:calc(24*var(--S));min-width:0;" onclick="reviewAns(1)">忘了</button>
-        <button class="btn block" style="background:linear-gradient(#F5C46B,#E8A33D);font-size:calc(24*var(--S));min-width:0;" onclick="reviewAns(2)">模糊</button>
-        <button class="btn block" style="background:linear-gradient(#4FD98A,#2FB868);font-size:calc(24*var(--S));min-width:0;" onclick="reviewAns(3)">会了</button>
-        <button class="btn block" style="background:linear-gradient(#67B7F0,#3E8FD8);font-size:calc(24*var(--S));min-width:0;" onclick="reviewAns(4)">轻松</button>
+        <button class="btn block" style="background:linear-gradient(#F2846A,#E5534B);font-size:calc(24*var(--S));min-width:0;" id="rvBtn1" onclick="reviewAns(1)">忘了</button>
+        <button class="btn block" style="background:linear-gradient(#F5C46B,#E8A33D);font-size:calc(24*var(--S));min-width:0;" id="rvBtn2" onclick="reviewAns(2)">模糊</button>
+        <button class="btn block" style="background:linear-gradient(#4FD98A,#2FB868);font-size:calc(24*var(--S));min-width:0;" id="rvBtn3" onclick="reviewAns(3)">会了</button>
+        <button class="btn block" style="background:linear-gradient(#67B7F0,#3E8FD8);font-size:calc(24*var(--S));min-width:0;" id="rvBtn4" onclick="reviewAns(4)">轻松</button>
       </div>
       <div id="rvStat" style="margin-top:calc(22*var(--S));font-size:calc(22*var(--S));color:rgba(255,255,255,.8);"></div>
     </div>
@@ -706,7 +710,24 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
     </div>
   </div>
 </div>
-
+<div class="mask hide" id="m-anki">
+  <div class="modal">
+    <h3>从 Anki 导入词库</h3>
+    <div style="font-size:calc(22*var(--S));color:var(--c-text2);line-height:1.7;">
+      · 支持 AnkiDroid 导出的<b>笔记文本</b>（.txt / .csv / .tsv）<br>
+      · 也支持 <b>.apkg / .colpkg</b><br>
+      · 每行格式：<b>单词 → 释义</b>（Tab 或逗号分隔）<br>
+      · 中文释义与音标会自动拆开，重复词自动合并
+    </div>
+    <input type="file" id="ankiFile" accept=".txt,.csv,.tsv,.apkg,.colpkg" style="display:none" onchange="ankiFileChosen(event)">
+    <div id="ankiPreview" style="margin-top:calc(14*var(--S));font-size:calc(22*var(--S));color:var(--c-text2);">还没有选择文件</div>
+    <div class="acts">
+      <button class="btn" onclick="ankiPickFile()">选择文件</button>
+      <button class="btn orange" id="ankiImportBtn" onclick="ankiDoImport()" disabled>导入</button>
+      <button class="btn ghost" onclick="hideMask('m-anki')">取消</button>
+    </div>
+  </div>
+</div>
 <div class="mask hide" id="m-tip">
   <div class="modal">
     <h3>温馨提示</h3>
@@ -840,7 +861,8 @@ window.NOTES_DATA = [
  items:[["January", "一月"], ["February", "二月"], ["March", "三月"], ["April", "四月"], ["May", "五月"], ["June", "六月"], ["July", "七月"], ["August", "八月"], ["September", "九月"], ["October", "十月"], ["November", "十一月"], ["December", "十二月"]]},
 {id:"qword",name:"疑问词",icon:"❓",sub:"课5·8个",
  items:[["who / whom", "提问人"], ["when", "提问时间"], ["what", "提问物"], ["where", "提问地点"], ["whose", "提问归属"], ["why", "提问原因"], ["which", "提问哪一个"], ["how", "提问状态"]]},
-];</script>
+];window.NOTE_PH={"forgiven":"/fəˈɡɪvən/","let":"/lɛt/","cut":"/kʌt/","shut":"/ʃʌt/","put":"/pʊt/","hurt":"/hɜːt/","hit":"/hɪt/","read":"/ɹiːd/","set":"/sɛt/","cost":"/ˈkɑst/","beat":"/biːt/","run":"/ɹʊn/","ran":"/ɹæn/","came":"/keɪm/","become":"/bəˈkʊm/","bought":"/bɔːt/","became":"/bɪˈkeɪm/","come":"/kʌm/","buy":"/baɪ/","thought":"/θɔːt/","catch":"/kæt͡ʃ/","bring":"/ˈbɹɪŋ/","teach":"/tiːt͡ʃ/","caught":"[k̠ʰoːt]","lend":"/lɛnd/","drunk":"/dɹʌŋk/","drink":"/dɹɪŋk/","sung":"/sʌŋ/","sing":"/sɪŋ/","rang":"/ɹæŋ/","sink":"/sɪŋk/","swim":"/swɪm/","blow":"/bləʊ/","hide":"/haɪd/","forbidden":"/fɝˈbɪdən/","write":"/ɹaɪt/","forbid":"/fəˈbɪd/","bear":"/bɛə(ɹ)/","bore":"/bɔː/","written":"/ˈɹɪtn̩/","wear":"/wɛə/","born":"/ˈbɔːn/","worn":"/wɔːn/","admit":"/ədˈmɪt/","fit":"/fɪt/","lie":"/laɪ̯/","jog":"/dʒɒɡ/","rot":"/ɹɔt/","ban":"/bæn/","scan":"/skæn/","beg":"/bɛɡ/","ship":"/ʃɪp/","cancel":"/ˈkænsl̩/","shop":"/ʃɒp/","clap":"/klæp/","spot":"/spɒt/","busy":"/ˈbɪzi/","happy":"/ˈhæpiː/","noisy":"/ˈnɔːɪzɪ/","specific":"/spəˈsɪf.ɪk/","scientific":"/ˌsaɪənˈtɪfɪk/","basic":"/ˈbeɪsɪk/","energetic":"/ˌɛnəˈdʒɛtɪk/","classic":"/ˈklæ.sɪk/","economic":"/ˌiːkəˈnɒmɪk/","public":"/ˈpʌblɪk/","automatic":"/ˌɔːtəˈmætɪk/","shy":"/ʃaɪ/","full":"/fʊl/","true":"/tɹuː/","considerable":"/kənˈsɪdəɹəbl̩/","responsible":"/ɹɪˈspɒnsəbl̩/","whole":"/həʊl/","probable":"/ˈpɹɒbəbl̩/","gentle":"/ˈdʒɛntl̩/","simple":"/ˈsɪmpəl/","possible":"/ˈpɒsɪbl̩/","incredible":"/ɪŋˈkɹɛdɪbəl/","terrible":"/ˈtɛ.ɹə.bl̩/","early":"/ˈɜː.li/","good":"/ɡʊ(d)/","hard":"/hɑːd/","fast":"/fɑːst/","daily":"/ˈdeɪli/","horrible":"/ˈhɑɹɪbəl/","friendly":"/ˈfɹɛndli/","weekly":"/wiːk.li/","silly":"/ˈsɪli/","monthly":"/ˈmʌnθli/","elderly":"/ˈɛldəli/","lonely":"/ˈləʊnli/","costly":"/ˈkɒst.li/","follow":"/ˈfɒləʊ/","existing":"/ɪɡˈzɪstɪŋ/","move":"/muːv/","study":"/ˈstʌdi/","getting":"[ˈɡɛɾɪŋ]","giving":"/ˈɡɪvɪŋ/","finding":"/ˈfaɪndɪŋ/","watching":"/ˈwɒtʃɪŋ/","writing":"/ˈɹaɪtɪŋ/","beaten":"/ˈbit(ə)n/","sought":"/sɔːt/","brought":"/bɹɔːt/","taught":"/tɔːt/","send":"/sɛnd/","spend":"/spɛnd/","spent":"/ˈspɛnt/","build":"/bɪld/","built":"/ˈbɪlt/","feel":"/fiːl/","felt":"/fɛlt/","leave":"/liːv/","left":"/lɛft/","keep":"/kiːp/","kept":"/ˈkɛpt/","sleep":"/sliːp/","sweep":"/swiːp/","mean":"/miːn/","meant":"/ˈmɛnt/","hear":"/hɪə(ɹ)/","heard":"/hiːɹd/","lead":"/lɛd/","led":"/ˈlɛd/","feed":"/ˈfiːd/","flee":"/fliː/","meet":"/miːt/","met":"/mɛt/","shoot":"/ʃuːt/","shot":"/ʃɒt/","get":"/ɡɛt/","win":"/wɪn/","won":"/wʌn/","sit":"/sɪt/","sat":"/sæt/","dig":"/dɪɡ/","dug":"/dʌɡ/","stick":"/stɪk/","stuck":"/ˈstʌk/","hang":"[heɪŋ]","sell":"/sɛl/","sold":"/ˈsəʊld/","tell":"/tɛl/","smell":"/smɛl/","spell":"/spɛl/","hold":"/həʊld/","held":"/ˈhɛld/","find":"/faɪnd/","found":"/faʊnd/","stand":"/stænd/","stood":"/stʊd/","understand":"/ˌɞndəɹˈstand/","lay":"/leɪ/","laid":"/leɪd/","pay":"/peɪ/","paid":"/ˈpeɪd/","say":"/seɪ/","said":"/sɛd/","make":"/meɪk/","made":"/meɪd/","lose":"/luːz/","lost":"/lɒst/","do":"/dʉː/","done":"/dʌn/","go":"/ɡəʉ/","went":"/went/","gone":"/ɡɔːn/","begin":"/biˈɡɪn/","began":"/bɪˈɡæn/","ring":"/ɹɪŋ/","blown":"/bləʊn/","fly":"/flaɪ/","flew":"/fluː/","know":"/nəʊ/","knew":"/ˈnjuː/","known":"/nəʊn/","grow":"/ɡɹəʊ/","grew":"/ɡɹuː/","grown":"/ɡɹəʊn/","throw":"/θɹəʊ/","draw":"/dɹɔː/","show":"/ʃəʊ/","showed":"/ˈʃoʊd/","break":"/bɹeɪk/","broke":"/bɹəʊk/","broken":"/ˈbɹəʊkən/","speak":"/spiːk/","spoke":"/spəʊk/","spoken":"/ˈspoʊkən/","steal":"/stiːl/","choose":"/t͡ʃuːz/","frozen":"/ˈfɹəʊzən/","woke":"/wəʊk/","wake":"/ˈweɪk/","forget":"/fəˈɡɛt/","forgot":"/fəˈɡɒt/","take":"/teɪk/","taken":"/ˈteɪkən/","took":"/tuːk/","shake":"/ˈʃeɪk/","eat":"/iːt/","fall":"/fɔːl/","rise":"/ɹaɪs/","rose":"/ɹəʊz/","drive":"/dɹaɪv/","eaten":"/ˈiːt(ə)n/","give":"/ɡɪv/","gave":"/ɡeɪv/","given":"/ˈɡɪ.vən/","forgive":"/fɚˈɡɪv/","saw":"/sɔː/","seen":"/ˈsiːn/","ride":"/ɹaɪd/","hidden":"/ˈhɪd(ə)n/","bite":"/bʌɪt/","bit":"/bɪt/","mop":"/mɒp/","nod":"/nɔd/","chat":"/tʃæt/","skip":"/skɪp/","plan":"/plæn/","commit":"/kəˈmɪt/","prefer":"/pɹɪˈfɜː/","dip":"/dɪp/","refer":"/ɹɪˈfɜː/","step":"/stɛp/","stop":"/stɒp/","drop":"/dɹɒp/","regret":"/ɹiˈɡɹɛt/","submit":"/səbˈmɪt/","equip":"/ɪˈkwɪp/","rob":"/ɹɒb/","trap":"/tɹæp/","man":"[mɛn]","woman":"/ˈwʊmɘn/","policeman":"/pəˈliːsmən/","child":"/t͡ʃaɪld/","tooth":"/tuːθ/","foot":"[fʊt̚]","goose":"/ˈɡuːs/","sheep":"/ʃiːp/","deer":"/diːɹ/","people":"/ˈpiːpəl/","shoes":"/ʃuːz/","glasses":"/ˈɡlasɪz/","gloves":"/ɡlʌvz/","shorts":"/ʃɔː(ɹ)ts/","clothes":"/kləʊ(ð)z/","trousers":"/ˈtɹaʊzəz/","socks":"/sɒks/","scissors":"/ˈsɪzəz/","pants":"/pænts/","me":"/miː/","myself":"/maɪˈsɛlf/","mine":"/maɪn/","my":"/mi/","you":"/jʉː/","yourself":"/jɔːˈsɛlf/","yours":"/jɔː(ɹ)z/","himself":"/hɪmˈsɛlf/","his":"/ˈhɪz/","her":"/ə(ɹ)/","herself":"/hɜːˈsɛlf/","hers":"/əz/","it":"/ɪt/","itself":"/ɪtˈsɛlf/","its":"/ɪts/","we":"/wiː/","us":"/əs/","ourselves":"/aʊəˈsɛlvz/","ours":"/ɑːz/","they":"/ðeɪ/","them":"/ðʌm/","themselves":"/ðəmˈsɛlvz/","theirs":"/ðɛəz/","careful":"/ˈkɛːfəl/","quick":"/kwɪk/","clear":"/klɪə(ɹ)/","quiet":"/ˈkwaɪ.ət/","current":"/ˈkʌɹənt/","slow":"/sləʊ/","sudden":"/ˈsʌdən/","heavy":"/ˈhe.vi/","angry":"/ˈæŋ.ɡɹi/","dry":"/dɹaɪ/","easy":"/ˈiːzi/","likely":"/ˈlaɪkli/","timely":"/ˈtaɪmli/","orderly":"/ˈɔːdəli/","deadly":"/ˈdɛd.li/","ugly":"/ˈʌɡli/","curly":"/ˈkɜːli/","lively":"/ˈlaɪvli/","only":"/ˈəʊn.li/","about":"/əˈbɛʊt/","after":"/ˈæf.tə(ɹ)/","before":"/bɪˈfɔː/","between":"/bɪˈtwiːn/","by":"/baɪ/","down":"/daʊn/","from":"/fɹɒm/","in":"/ɪn/","near":"/nɪə(ɹ)/","of":"/ɔv/","on":"/ɒn/","to":"/tʉː/","under":"/ˈʊndə/","up":"/ap/","without":"/wɪθˈʌʊt/","here":"/hiːɹ/","there":"/ðeː(ɹ)/","far":"/fɑː/","somewhere":"/ˈsʌm.hweːɹ/","recently":"/ˈɹiːsəntli/","soon":"/suːn/","finally":"/ˈfaɪ.nəl.i/","later":"/ˈleɪtə/","always":"/ˈɔː(l).weɪz/","usually":"/ˈjuːʒju(ə)li/","often":"/ˈɑf(t)ən/","seldom":"/ˈsɛldəm/","sometimes":"/ˈsʌmtaɪmz/","rarely":"/ˈɹɛːli/","never":"/ˈnɛv.ə(ɹ)/","completely":"/kəmˈpliːtli/","exactly":"/ɪɡˈzæk(t)li/","extremely":"/ɪksˈtɹiːmli/","really":"/ˈɹɪəli/","hardly":"/ˈhɑːdli/","barely":"/ˈbɛə(ɹ).li/","nearly":"/ˈniːɹli/","mainly":"/ˈmeɪnli/","almost":"/ɔːl.ˈməʊst/","quite":"/kwaɪt/","very":"/ˈvɛɹi/","too":"/tuː/","maybe":"/ˈmeɪbi/","perhaps":"/pəˈhæps/","possibly":"/ˈpɒsɪbli/","probably":"/ˈpɹɒbli/","clearly":"/ˈkliːɹli/","obviously":"/ˈɒ(b).vɪəs.li/","certainly":"/ˈsɜːtn̩li/","definitely":"/ˈdɛf.nɪt.li/","can":"/ˈkæn/","will":"/wɪl/","may":"/meɪ/","should":"/ʃʊd/","die":"/daɪ/","tie":"/taɪ/","watch":"/wɒt͡ʃ/","try":"/tɹaɪ/","wait":"/weɪt/","live":"/lɪv/","work":"/wɜːk/","talk":"/toːk/","ask":"/ˈask/","decide":"/dɪˈsaɪd/","play":"/pleɪ/","exist":"/ɪɡˈzɪst/","studied":"/ˈstʌdid/","having":"/ˈhævɪŋ/","am":"[e̞m]","like":"/laɪk/","March":"/mɑːtʃ/","May":"/meɪ/","August":"/ɔːˈɡʌst/","who":"/huː/","when":"/ʍɛn/","what":"/wɔt/","where":"/wɛə(ɹ)/","whose":"/huːz/","why":"/waɪ/","which":"/wɪt͡ʃ/","how":"/hæŏ/","fight":"[fʌɪt]","think":"/θɪŋk/","seek":"/siːk/","sent":"/sɛnt/","got":"/ɡɒt/","told":"/tɔʊld/","understood":"/ʌndəɹˈstʊd/","did":"/dɪd/","stolen":"/ˈstəʊlən/","freeze":"/ˈfɹiːz/","mistake":"/mɪˈsteɪk/","mistaken":"/mɪsˈteɪkən/","shook":"/ʃʊk/","ate":"/eɪt/","fell":"/fɛl/","drove":"/dɹəʊv/","driven":"/ˈdɹɪvən/","see":"/siː/","fish":"/fɪʃ/","he":"/hi/","him":"/əm/","she":"/ʃiː/","sad":"/sæd/","watched":"/wɒtʃt/","becoming":"/bɪˈkʊmɪŋɡ/","fought":"/fɔːt/","lent":"/lent/","slept":"/slept/","swept":"/swept/","fed":"/fed/","fled":"/fled/","hung":"/hʌŋ/","smelt":"/smelt/","spelt":"/spelt/","have":"/hæv; həv/","had":"/hæd; həd/","begun":"/bɪˈɡʌn/","drank":"/dræŋk/","rung":"/rʌŋ/","sang":"/sæŋ/","sank":"/sæŋk/","sunk":"/sʌŋk/","swam":"/swæm/","swum":"/swʌm/","blew":"/bluː/","flown":"/floʊn/","threw":"/θruː/","thrown":"/θroʊn/","drew":"/druː/","drawn":"/drɔːn/","shown":"/ʃoʊn/","stole":"/stoʊl/","chose":"/tʃoʊz/","chosen":"/ˈtʃoʊzn/","froze":"/froʊz/","woken":"/ˈwoʊkən/","forgotten":"/fərˈɡɑːtn/","mistook":"/mɪˈstʊk/","shaken":"/ˈʃeɪkən/","fallen":"/ˈfɔːlən/","risen":"/ˈrɪzn/","forgave":"/fərˈɡeɪv/","rode":"/roʊd/","ridden":"/ˈrɪdn/","hid":"/hɪd/","bitten":"/ˈbɪtn/","forbade":"/fərˈbædˌfərˈbeɪd/","wrote":"/roʊt/","tear":"/ter; tɪ(ə)r/","tore":"/tɔːr/","torn":"/tɔːrn/","wore":"/wɔːr/","lain":"/leɪn/","permit":"/pərˈmɪt/","mouse":"/maʊs/","Chinese":"/ˌtʃaɪˈniːz/","Japanese":"/ˌdʒæpəˈniːz/","chopsticks":"/ˈtʃɑːpstɪks/","I":"/aɪ/","your":"/jʊr; jər/","our":"/ˈaʊər; ɑːr/","yourselves":"/jɔːrˈselvz/","their":"/ðer; ðər/","hourly":"/ˈaʊərli/","yearly":"/ˈjɪrli/","manly":"/ˈmænli/","at":"/æt; ət/","for":"/fɔːr; fər/","with":"/wɪð; wɪθ/","incredibly":"/ɪnˈkredəbli/","must":"/mʌst; məst/","look":"/lʊk/","use":"/juːz/","existed":"/ɪɡˈzɪstɪd/","studying":"/ˈstʌdiɪŋ/","winning":"/ˈwɪnɪŋ/","has":"/hæz; həz/","January":"/ˈdʒænjueri/","February":"/ˈfebrueri/","April":"/ˈeɪprəl/","June":"/dʒuːn/","July":"/dʒʊˈlaɪ/","September":"/sepˈtembər/","October":"/ɑːkˈtoʊbər/","November":"/noʊˈvembər/","December":"/dɪˈsembər/"};
+</script>
 <script>window.DICT_FIX={
 "finding":"[ˈfaɪndɪŋ] n. 调查发现/结果; 裁决",
 "walk":"行走",
@@ -3479,13 +3501,15 @@ function bufLoad(w){
     xhr.send();
   }catch(e){ BUF_LD[key] = 0; legAudio(w); }
 }
-function bufPlay(key){
+function bufPlay(key, onEnd){
   var ac = acGet();
   if(!ac || !BUF[key]) return false;
   try{
     var src = ac.createBufferSource();
     src.buffer = BUF[key];
     src.connect(ac.destination);
+    try{ src.playbackRate.value = 1.4; }catch(e){}   /* v8.6.5 语速加快 */
+    if(typeof onEnd === 'function'){ src.onended = function(){ try{ onEnd(); }catch(e){} }; }
     src.start(0);
     return true;
   }catch(e){ return false; }
@@ -3570,46 +3594,68 @@ function pfScrollbind(){
     prefetchAll(out, 60);
   });
 }
-function speak(w){
+function speak(w, onEnd){
   var key = String(w).toLowerCase();
+  var fEnd = (typeof onEnd === 'function') ? onEnd : null;
   try{
-    /* ⓪ Web Audio 预解码命中 → 瞬发（最快） */
-    if(BUF[key] && bufPlay(key)) return;
+    /* ① Web Audio 预解码命中 → 瞬发（最快） */
+    if(BUF[key] && bufPlay(key, fEnd)) return;
     if(!BUF[key] && !BUF_LD[key]) bufLoad(w);
     var au = null;
     if(PRE[key]){
-      au = PRE[key];                                   /* ① 预加载命中 → 瞬发 */
+      au = PRE[key];
     }else if(window.AUDIO_B64 && AUDIO_B64[key]){
       if(!WORD_AUDIO[key]){ WORD_AUDIO[key] = new Audio(); WORD_AUDIO[key].preload = 'auto'; }
       au = WORD_AUDIO[key];
-      var s1 = b64ToUrl(AUDIO_B64[key]);               /* ② 内置真人音频（16 词） */
+      var s1 = b64ToUrl(AUDIO_B64[key]);
       if(au._my !== s1){ au.src = s1; au._my = s1; }
     }else{
       if(!WORD_AUDIO[key]){ WORD_AUDIO[key] = new Audio(); WORD_AUDIO[key].preload = 'auto'; }
       au = WORD_AUDIO[key];
-      var s2 = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(w) + '&type=2';  /* ③ 现场联网 */
+      var s2 = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(w) + '&type=2';
       if(au._my !== s2){ au.src = s2; au._my = s2; }
+    }
+    /* v8.6.4：播完即回调（读完一个马上读下一个） */
+    try{ au.playbackRate = 1.4; }catch(e){}   /* v8.6.5 语速加快 */
+    au.onended = fEnd ? function(){ try{ fEnd(); }catch(e){} } : null;
+    au.onerror = fEnd ? function(){ try{ fEnd(); }catch(e){} } : null;
+    /* v8.6.3：同一词正在播 → 另开实例，保证重复形式都能出声 */
+    var busy = false;
+    try{ busy = !au.paused && !au.ended && au.currentTime > 0; }catch(e){ busy = false; }
+    if(busy && au.src){
+      var au2 = new Audio(au.src);
+      try{ au2.playbackRate = 1.4; }catch(e){}
+      au2.onended = fEnd ? function(){ try{ fEnd(); }catch(e){} } : null;
+      au2.onerror = fEnd ? function(){ try{ fEnd(); }catch(e){} } : null;
+      var p2 = au2.play();
+      if(p2 && p2.catch){ p2.catch(function(){ ttsSpeak(w, fEnd); }); }
+      return;
     }
     try{ au.currentTime = 0; }catch(e){}
     var p = au.play();
-    if(p && p.catch){ p.catch(function(){ ttsSpeak(w); }); }   // 播不出 → 回退 TTS
-  }catch(e){ ttsSpeak(w); }
+    if(p && p.catch){ p.catch(function(){ ttsSpeak(w, fEnd); }); }
+  }catch(e){ ttsSpeak(w, fEnd); }
 }
-function ttsSpeak(w){
+function ttsSpeak(w, onEnd){
+  var fEnd = (typeof onEnd === 'function') ? onEnd : null;
   try{
     if(window.speechSynthesis){
-      speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(w);
-      u.lang = 'en-US'; u.rate = .85; u.volume = 1;
+      u.lang = 'en-US'; u.rate = 1.1; u.volume = 1;   /* v8.6.5 TTS 语速从 .85 提到 1.1 */
       if(_voice) u.voice = _voice;
+      if(fEnd){
+        u.onend = function(){ try{ fEnd(); }catch(e){} };
+        u.onerror = function(){ try{ fEnd(); }catch(e){} };
+      }
       speechSynthesis.speak(u);
       return;
     }
   }catch(e){}
   try{
-    if(window.AndroidTTS && AndroidTTS.speak){ AndroidTTS.speak(w); return; }
+    if(window.AndroidTTS && AndroidTTS.speak){ AndroidTTS.speak(w); if(fEnd) setTimeout(fEnd, 700); return; }
   }catch(e){}
-  toast('「' + w + '」发音失败，请检查网络');
+  if(fEnd){ setTimeout(fEnd, 700); }
+  else{ toast('\u300c' + w + '\u300d\u53d1\u97f3\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc'); }
 }
 
 /* ---------- 音频预热：进页面就把 PCM 解码好，点击秒响 ---------- */
@@ -3892,12 +3938,12 @@ function audioElSent(url, text){
   }catch(e){ if(text) ttsSpeak(text); }
 }
 /* 统一发音入口：兼容「DOM元素 / 字符串」；自动区分单词与整句 */
-function speakStr(el){
+function speakStr(el, onEnd){
   var s = (typeof el === 'string') ? el : (el && el.getAttribute ? (el.getAttribute('data-s') || '') : '');
   s = String(s || '').trim();
-  if(!s) return;
-  if(isSentenceText(s)){ speakSentence(s); }
-  else{ speak(s); }
+  if(!s){ if(typeof onEnd === 'function') onEnd(); return; }
+  if(isSentenceText(s)){ speakSentence(s); if(typeof onEnd === 'function') setTimeout(onEnd, 1600); }
+  else{ speak(s, onEnd); }
 }
 function countUnk(){
   return S.words.filter(function(w){ return w.pre === 'unknown'; }).length;
@@ -4946,9 +4992,9 @@ function renderLearn(){
 
   var cur = sel.slice(S.page * 5, S.page * 5 + 5);
   if(!cur.length){
-    $('learnCards').innerHTML = '<div class="muted tac pad">没有待识记的单词</div>';
-    $('learnMeaning').textContent = '';
-    $('pageLabel').textContent = '1/1';
+    var _lc = $('learnCards'); if(_lc) _lc.innerHTML = '<div class="muted tac pad">没有待识记的单词</div>';
+    var _lm = $('learnMeaning'); if(_lm) _lm.textContent = '';
+    var _pl = $('pageLabel'); if(_pl) _pl.textContent = '1/1';
     return;
   }
   if(!S.learnFocus || !cur.some(function(w){ return w.w === S.learnFocus; })){
@@ -6017,11 +6063,39 @@ function rvPrevSet(sel){
   var p = S.rvPrev;
   if(!p || !p.w || p.sel) return;
   var x = S.words.filter(function(o){ return o.w === p.w; })[0];
-  if(x){ ankiGrade(x, sel === 1 ? 'again' : 'hard'); }
+  var _st = (x && x.rv && x.rv.S > 0) ? x.rv.S : 0;
+  if(x){
+    ankiGrade(x, sel === 1 ? 'again' : 'hard');
+    if(sel === 1){
+      /* ★ 忘记 → 真正打回队列（先去重，再插到第 3 位） */
+      if(!S.rvQueue) S.rvQueue = [];
+      var _ex = S.rvQueue.indexOf(p.w);
+      if(_ex >= 0) S.rvQueue.splice(_ex, 1);
+      S.rvQueue.splice(Math.min(2, S.rvQueue.length), 0, p.w);
+    }else if(sel === 2 && x.rv){
+      /* ★ 模糊 → 真惩罚：稳定度打折、难度上调、间隔缩一半，立刻生效 */
+      x.rv.S = Math.max(0.1, (x.rv.S || 1) * 0.7);
+      x.rv.D = Math.min(10, (x.rv.D || 5) + 0.5);
+      x.rv.ivl = fIvl(x.rv.S, S.retain || 0.9);
+      x.rv.due = Date.now() + x.rv.ivl * 86400000;
+      x.rv.next = x.rv.due;
+      x.rv.g = 2;
+      x.rv.stage = x.rv.ivl <= 1 ? 1 : x.rv.ivl <= 3 ? 2 : x.rv.ivl <= 7 ? 3 : x.rv.ivl <= 15 ? 4
+                 : x.rv.ivl <= 30 ? 5 : x.rv.ivl <= 90 ? 6 : x.rv.ivl <= 180 ? 7 : 8;
+    }
+  }
   p.sel = sel;
   save();
   renderReview();
-  toast(sel === 1 ? '已把「' + p.w + '」记为忘记' : '已把「' + p.w + '」记为模糊', 2000);
+  var _tip;
+  if(sel === 1){
+    _tip = '😵「' + p.w + '」已打回队列，稍后再考'
+         + (_st > 0 && x.rv ? '（稳定度 ' + _st.toFixed(1) + ' → ' + x.rv.S.toFixed(1) + '）' : '（10 分钟后到期）');
+  }else{
+    _tip = '🤔「' + p.w + '」记为模糊，间隔缩短'
+         + (x && x.rv ? '（下次 ' + x.rv.ivl + ' 天）' : '');
+  }
+  toast(_tip, 2600);
 }
 /* 渲染当前卡 */
 /* 渲染当前卡 */
@@ -6035,6 +6109,7 @@ function renderReview(){
   S.rvViewed = 0;
   $('rvHint').classList.remove('hide');
   $('rvProg').textContent = '剩 ' + q.length + ' 词';
+  try{ rvUpdateBtns(); }catch(e){}
   $('rvStat').textContent = '😀 ' + (S.rvGood || 0) + ' · 🤔 ' + (S.rvHard || 0) + ' · 😵 ' + (S.rvBad || 0) + (S.rvEasy ? ' · ⚡ ' + S.rvEasy : '');
   /* v8.6需求2：上一词回顾（单词 + 释义 + 忘记/模糊） */
   var _pv = $('rvPrev');
@@ -6084,7 +6159,8 @@ function reviewAns(grade){
     if(x){
       if(x.learn === 'learning') x.learn = 'learned';
       ankiGrade(x, 'again');
-      q.push(w);
+      /* Anki 式：忘记的词插到往后第 2 个位置，很快再考一次，不压到最后 */
+      q.splice(Math.min(2, q.length), 0, w);
       /* v8.6需求1：取消遗忘多次回炉——忘的词继续在本轮队列里滚，不再送回学新 */
     }
   }else if(eff === 2){
@@ -6164,6 +6240,16 @@ function renderVocabName(){
   var v = S.vocab || ((typeof VOCABS !== 'undefined' && VOCABS[0]) || '');
   el.textContent = v;
 }
+function phTag(w){
+  /* v8.6.8：单词后附音标 */
+  try{
+    var k = String(w || '').toLowerCase().trim();
+    if(!k || !window.NOTE_PH) return '';
+    var p = NOTE_PH[k];
+    if(!p) return '';
+    return '<span class="wi-ph">' + p + '</span>';
+  }catch(e){ return ''; }
+}
 function renderWords(){
   var box = $('wordsBody');
   if(!box) return;
@@ -6188,21 +6274,21 @@ function renderWords(){
   });
   h += '</div>';
   h += '<div class="card pad" style="margin-top:calc(14*var(--S));background:#FFF8EC;font-size:calc(20*var(--S));color:#8A6D3B;line-height:1.6;">'
-     + g.icon + ' <b>' + g.name + '</b> · ' + g.sub + '：点单词发音，点 ✓ 标记已掌握</div>';
+     + g.icon + ' <b>' + g.name + '</b> · ' + g.sub + '：点单词/🔊 自动连读全部变化形式（同形只读一次）；点 ✓ 标记已掌握</div>';
   h += '<div style="margin-top:calc(12*var(--S));">';
   g.items.forEach(function(it, idx){
     var key = g.id + '#' + it[0];
     var isDone = !!done[key];
     var w0 = String(it[0] || '');
     var x0 = '', m0 = '';
-    if(g.id === 'irr'){ x0 = it[1] + ' · ' + it[2]; m0 = String(it[3] || ''); }
-    else if(g.id === 'pron'){ x0 = (it[1] || []).join(' · '); }
-    else if(g.id === 'verb5'){ x0 = '现:' + it[1] + ' 过:' + it[2] + ' 过分:' + it[3] + ' 现分:' + it[4]; m0 = String(it[5] || ''); }
+    if(g.id === 'irr'){ x0 = it[1] + phTag(it[1]) + ' · ' + it[2] + phTag(it[2]); m0 = String(it[3] || ''); }
+    else if(g.id === 'pron'){ x0 = (it[1] || []).map(function(q){ return q + phTag(q); }).join(' · '); }
+    else if(g.id === 'verb5'){ x0 = '现:' + it[1] + phTag(it[1]) + ' 过:' + it[2] + phTag(it[2]) + ' 过分:' + it[3] + phTag(it[3]) + ' 现分:' + it[4] + phTag(it[4]); m0 = String(it[5] || ''); }
     else if(g.id === 'adv'){ x0 = String(it[2] || ''); m0 = String(it[1] || ''); }
     else { m0 = String(it[1] || ''); x0 = String(it[2] || ''); }
     h += '<div class="wrow' + (isDone ? ' done' : '') + '">'
        +   '<div class="wi-main" onclick="wordPronounce(\'' + g.id + '\',' + idx + ')">'
-       +     '<span class="wi-w">' + w0 + '</span>'
+       +     '<span class="wi-w">' + w0 + phTag(w0) + '</span>'
        +     (x0 ? '<span class="wi-x">' + x0 + '</span>' : '')
        +     (m0 ? '<div class="wi-m">' + m0 + '</div>' : '')
        +   '</div>'
@@ -6216,11 +6302,98 @@ function renderWords(){
   g.items.forEach(function(it){ if(done[g.id + '#' + it[0]]) dn++; });
   var wd = $('wordsDone');
   if(wd) wd.textContent = '已掌握 ' + dn + ' / ' + g.items.length;
+  wsPreload(g);
+}
+function wsPreload(g){
+  /* v8.6.6：进页面预加载音频，点词零等待 */
+  if(!g || !g.items) return;
+  var lim = g.items.length;
+  for(var i = 0; i < lim; i++){
+    var it = g.items[i];
+    if(!it) continue;
+    var w = String(it[0] || '');
+    w = w.split(/→|->/)[0].trim();
+    var m = w.match(/[a-zA-Z][a-zA-Z' -]*/);
+    if(m && m[0]){ try{ bufLoad(m[0].trim()); }catch(e){} }
+  }
 }
 function pickWordsCat(id){
   S.wordsCat = id;
   save();
   renderWords();
+}
+var _seqId = 0;
+var _seqId = 0;
+var _chainSrcs = [];
+function wsStopChain(){
+  for(var i = 0; i < _chainSrcs.length; i++){
+    try{ _chainSrcs[i].stop(0); }catch(e){}
+  }
+  _chainSrcs = [];
+}
+function trimBuf(buf){
+  /* v8.6.7：裁掉首尾静音，译音紧贴 */
+  try{
+    var ch = buf.numberOfChannels, sr = buf.sampleRate;
+    var d = buf.getChannelData(0), n = d.length;
+    var th = 0.006, s0 = 0, e0 = n - 1;
+    while(s0 < n && Math.abs(d[s0]) < th) s0++;
+    while(e0 > s0 && Math.abs(d[e0]) < th) e0--;
+    if(e0 - s0 < sr * 0.05) return buf;
+    if(s0 <= sr * 0.005 && (n - 1 - e0) <= sr * 0.01) return buf;
+    var len = e0 - s0 + 1;
+    var ac = acGet();
+    if(!ac) return buf;
+    var nb = ac.createBuffer(ch, len, sr);
+    for(var c = 0; c < ch; c++){
+      nb.copyToChannel(buf.getChannelData(c).subarray(s0, e0 + 1), c);
+    }
+    return nb;
+  }catch(e){ return buf; }
+}
+function wsPlayChain(keys, id){
+  var ac = acGet();
+  if(!ac) return false;
+  wsStopChain();
+  var t = ac.currentTime + 0.05;
+  for(var i = 0; i < keys.length; i++){
+    var b = BUF[keys[i]];
+    if(!b) return false;
+    var seg = trimBuf(b);
+    var src = ac.createBufferSource();
+    src.buffer = seg;
+    src.connect(ac.destination);
+    try{ src.playbackRate.value = 1.4; }catch(e){}
+    try{ src.start(t); }catch(e){ return false; }
+    _chainSrcs.push(src);
+    t += seg.duration / 1.4;   /* 无缝：上一段结束点 = 下一段起点 */
+  }
+  return true;
+}
+function speakSeq(list, i, id){
+  if(i === undefined || i === 0){ id = ++_seqId; }
+  if(id !== _seqId) return;
+  /* v8.6.7：优先 Web Audio 无缝串播 */
+  if(i === undefined || i === 0){
+    var keys = [], ready = true;
+    for(var k = 0; k < list.length; k++){
+      var key = String(list[k] || '').toLowerCase();
+      if(BUF[key]){ keys.push(key); }
+      else{ ready = false; }
+    }
+    if(ready && wsPlayChain(keys, id)) return;
+  }
+  i = i || 0;
+  if(!list || i >= list.length) return;
+  var fired = false;
+  function next(){
+    if(fired) return;
+    fired = true;
+    speakSeq(list, i + 1, id);
+  }
+  if(typeof speakStr === 'function') speakStr(list[i], next);
+  else{ next(); }
+  setTimeout(next, 3000);
 }
 function wordPronounce(gid, idx){
   var g = null;
@@ -6228,15 +6401,25 @@ function wordPronounce(gid, idx){
   if(!g) return;
   var it = g.items[idx];
   if(!it) return;
-  var s = String(it[0] || '');
-  if(gid === 'pron' && it[1] && it[1].length){ s = it[1][0]; }
-  else {
-    s = s.replace(/→.*$/g, '');
-    var m = s.match(/[a-zA-Z][a-zA-Z' -]*/);
-    s = m ? m[0] : '';
+  /* v8.6.2：点一次 → 把该词的所有变化形式依次连读（按拼写去重） */
+  var list = [];
+  function add(x){
+    x = String(x || '').trim();
+    if(!x) return;
+    var m = x.match(/[a-zA-Z][a-zA-Z' -]*/);
+    x = m ? m[0].trim() : '';
+    if(!x) return;
+    list.push(x);   /* v8.6.3：不去重，每个变化形式都读 */
   }
-  s = s.trim();
-  if(s && typeof speakStr === 'function') speakStr(s);
+  if(gid === 'irr'){ add(it[0]); add(it[1]); add(it[2]); }
+  else if(gid === 'verb5'){ add(it[0]); add(it[1]); add(it[2]); add(it[3]); add(it[4]); }
+  else if(gid === 'pron'){ if(it[1] && it[1].length){ it[1].forEach(add); } else { add(it[0]); } }
+  else if(gid === 'plural' || gid === 'adjadv' || gid === 'ving'){
+    String(it[0] || '').split(/→|->/).forEach(add);
+  }
+  else { add(it[0]); }
+  if(!list.length) return;
+  speakSeq(list);
 }
 function wordToggle(key){
   if(!S.notesDone) S.notesDone = {};
@@ -7123,6 +7306,375 @@ function renderWsMix(){
   h += '<button class="btn" style="width:100%;margin-top:calc(16*var(--S));" onclick="wsMixExit()">回词单</button>';
   h += '<button class="btn" style="width:100%;margin-top:calc(10*var(--S));background:#F2F6F5;color:#667;" onclick="wsMixRestart()">再选一批</button>';
   box.innerHTML = h;
+}
+/* ==================================================
+   ★ Anki 词库（v3）：可以有多本，每本一个牌组，词表与复习池各自独立
+   ================================================== */
+var _ankiRows = null;
+var _ankiBookName = '';
+var _vocabList = [];
+var _WORDS_MAIN_KEY = 'ks_words_main';
+var _BOOK_PREFIX = 'ks_book_';
+var _migratedV2 = false;
+
+function _bookKey(n){ return _BOOK_PREFIX + n; }
+function _isAnkiBook(n){ return !!n && (S.ankiBooks || []).indexOf(n) >= 0; }
+function _saveBook(n, w){
+  try{ localStorage.setItem(_bookKey(n), JSON.stringify(w)); return true; }
+  catch(e){ return false; }
+}
+function _loadBook(n){
+  try{
+    var t = localStorage.getItem(_bookKey(n));
+    if(!t) return null;
+    var o = JSON.parse(t);
+    return (o && o.length) ? o : null;
+  }catch(e){ return null; }
+}
+function _flushCurrentBook(){
+  if(_isAnkiBook(S.vocab) && S.words && S.words.length){ _saveBook(S.vocab, S.words); }
+}
+
+/* 兼容 v2：把 S.ankiWords 迁移成一本词库 */
+function _migrateAnkiBooks(){
+  if(_migratedV2) return;
+  _migratedV2 = true;
+  if(S.ankiWords && S.ankiWords.length){
+    var n = (S.vocab && S.vocab.indexOf('Anki') >= 0) ? S.vocab : '📥 Anki词库';
+    if(!S.ankiBooks) S.ankiBooks = [];
+    if(S.ankiBooks.indexOf(n) < 0) S.ankiBooks.push(n);
+    _saveBook(n, S.ankiWords);
+    try{ delete S.ankiWords; }catch(e){}
+    save();
+  }
+}
+
+/* 原词库暂存 / 恢复 */
+function _stashMainWords(){
+  if(_isAnkiBook(S.vocab)) return;
+  var ok = false;
+  try{
+    localStorage.setItem(_WORDS_MAIN_KEY, JSON.stringify({ name: S.vocab, words: S.words }));
+    ok = true;
+  }catch(e){}
+  if(!ok){ S.wordsMain = S.words; S.wordsMainName = S.vocab; }
+}
+function _restoreMainWords(){
+  try{
+    var t = localStorage.getItem(_WORDS_MAIN_KEY);
+    if(t){
+      var o = JSON.parse(t);
+      if(o.words && o.words.length){
+        S.words = o.words; S.vocab = o.name || VOCABS[0];
+        return true;
+      }
+    }
+  }catch(e){}
+  if(S.wordsMain && S.wordsMain.length){
+    S.words = S.wordsMain; S.vocab = S.wordsMainName || VOCABS[0];
+    return true;
+  }
+  return false;
+}
+
+function _resetRounds(){
+  S.groupsDone = {};
+  S.batch = []; S.batchDay = '';
+  S.round = 0; S.page = 0;
+  S.cutList = []; S.cutDone = []; S.cutFocus = ''; S.cutY = 0; S.cutN = 0;
+  S.cutYesList = []; S.cutNoList = []; S.cutAllDone = false;
+  S.revealed = [];
+  /* ★ 复习池隔离：清掉上一本词库排的复习队列与计数 */
+  S.rvQueue = [];
+  S.rvGood = 0; S.rvBad = 0; S.rvHard = 0; S.rvEasy = 0; S.rvViewed = 0;
+  S.rvPrev = null;
+}
+
+/* ---------- 弹窗 ---------- */
+function openAnkiImport(){
+  _migrateAnkiBooks();
+  _ankiRows = null;
+  _ankiBookName = '';
+  var p = $('ankiPreview');
+  if(p) p.textContent = '还没有选择文件';
+  var b = $('ankiImportBtn');
+  if(b) b.disabled = true;
+  showMask('m-anki');
+}
+function ankiPickFile(){
+  var f = $('ankiFile');
+  if(f){ try{ f.value = ''; }catch(e){} f.click(); }
+}
+function ankiFileChosen(ev){
+  var file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  var fname = file.name || '';
+  var p = $('ankiPreview');
+  if(/\.(apkg|colpkg)$/i.test(fname)){
+    if(p) p.innerHTML = '⚠️ 选到的是 <b>' + fname + '</b>（压缩包）<br>'
+      + '请在 AnkiDroid 里：牌组 → ⋮ → 导出 → 导出笔记 → <b>纯文本 / CSV</b>，再回来选那个文件。';
+    return;
+  }
+  var fr = new FileReader();
+  fr.onload = function(){
+    var txt = String(fr.result || '');
+    /* 词库名：优先取文件里的「# 牌组: XXX」 */
+    var m = txt.match(/^#\s*牌组[:：]\s*(.+)$/m);
+    _ankiBookName = m ? m[1].trim() : '';   /* 没标注牌组 → 交给导入时决定（单本会自动并入） */
+
+    var rows = parseAnkiText(txt);
+    if(!rows.length){
+      if(p) p.textContent = '没识别到词条。请确认每行是「单词<TAB>释义」或「单词,释义」。';
+      return;
+    }
+    _ankiRows = rows;
+    var _showName = _ankiBookName || ((S.ankiBooks && S.ankiBooks.length === 1) ? S.ankiBooks[0] : 'Anki词库');
+    var old = _loadBook(_showName) || [];
+    if(p) p.innerHTML = '✅ 词库：<b>' + _showName + '</b><br>'
+      + '识别到 <b style="color:var(--c-primary);">' + rows.length + '</b> 个词'
+      + (old.length ? '<br>已有 ' + old.length + ' 词，重复的会自动合并、进度保留' : '')
+      + '<br>示例：' + rows.slice(0, 3).map(function(r){ return r.w; }).join(' / ');
+    var b = $('ankiImportBtn');
+    if(b) b.disabled = false;
+  };
+  fr.readAsText(file, 'UTF-8');
+}
+
+function parseAnkiText(txt){
+  var rows = [], seen = {};
+  txt.split(/\r?\n/).forEach(function(line){
+    line = String(line).replace(/\uFEFF/g, '');
+    if(!line || line.charAt(0) === '#') return;
+    var parts = line.split('\t');
+    if(parts.length < 2) parts = line.split(',');
+    if(parts.length < 2) parts = line.split(';');
+    if(parts.length < 2) return;
+    var w = (parts[0] || '').trim();
+    var rest = parts.slice(1).join(' ').trim();
+    if(!w || w.length > 40) return;
+    var ph = '';
+    var mm = rest.match(/[\[\/][^\]\/]{2,40}[\]\/]/);
+    if(mm){ ph = mm[0]; rest = rest.replace(mm[0], '').trim(); }
+    var k = w.toLowerCase();
+    if(seen[k]) return;
+    seen[k] = 1;
+    rows.push({ w: w, m: rest, ph: ph });
+  });
+  return rows;
+}
+
+/* ---------- 导入：建/更新一本 Anki 词库 ---------- */
+function ankiDoImport(){
+  if(!_ankiRows || !_ankiRows.length){ toast('还没有可导入的词'); return; }
+  var rows = _ankiRows;
+  var bookName = _ankiBookName || '';
+  if(!bookName){
+    var _books = S.ankiBooks || [];
+    bookName = (_books.length === 1) ? _books[0] : 'Anki词库';
+  }
+  var oldList = _loadBook(bookName) || [];
+  /* ★ 正在用这本词库时，内存里的才是最新进度（含今天刚学的） */
+  if(S.vocab === bookName && S.words && S.words.length) oldList = S.words;
+  var oldMap = {};
+  oldList.forEach(function(x){ oldMap[(x.w || '').toLowerCase()] = x; });
+
+  var kept = 0, added = 0;
+  var _maxG = -1;
+  oldList.forEach(function(x){ if((x.group || 0) > _maxG) _maxG = x.group; });
+  var nw = rows.map(function(o, i){
+    var old = oldMap[(o.w || '').toLowerCase()];
+    if(old){
+      kept++;
+      old.m = old.m || o.m;
+      old.ph = old.ph || o.ph;
+      /* ★ 不改 group，否则「第 N 组已学完」的进度会张冠李戴 */
+      if(old.group == null) old.group = Math.floor(i / 5);
+      return old;
+    }
+    added++;
+    /* 新词排在已有分组之后，不和老组混 */
+    return { w: o.w, m: o.m, ph: o.ph, pre: 'unselected', learn: 'unlearned', post: null,
+             group: (_maxG < 0 ? Math.floor(i / 5) : _maxG + 1 + Math.floor((added - 1) / 5)) };
+  });
+
+  /* ★ 每天增量导入：这次文件里没带的旧词，保留并接在末尾，绝不丢词 */
+  var _newSet = {};
+  rows.forEach(function(o){ _newSet[(o.w || '').toLowerCase()] = 1; });
+  var _tail = oldList.filter(function(x){ return !_newSet[(x.w || '').toLowerCase()]; });
+  if(_tail.length){
+    var _base = Math.floor(nw.length / 5);
+    _tail.forEach(function(x, k){ x.group = _base + Math.floor(k / 5); });
+    nw = nw.concat(_tail);
+  }
+
+  _flushCurrentBook();          /* 当前若是别的 Anki 词库，先回存 */
+  _stashMainWords();            /* 主词库存起来 */
+
+  if(!S.ankiBooks) S.ankiBooks = [];
+  if(S.ankiBooks.indexOf(bookName) < 0) S.ankiBooks.push(bookName);
+
+  var saved = _saveBook(bookName, nw);
+  S.words = nw;
+  S.vocab = bookName;
+  _resetRounds();
+  save();
+  try{ renderNine(); }catch(e){}
+  try{ if(typeof renderVocabName === 'function') renderVocabName(); }catch(e){}
+  hideMask('m-anki');
+  toast('✅ 词库「' + bookName + '」：' + nw.length + ' 词（新增 ' + added + '，合并 ' + kept + '）'
+        + (saved ? '' : ' ⚠️保存失败'), 4500);
+}
+
+/* ---------- 切换 ---------- */
+function switchToAnkiBook(name){
+  if(!_isAnkiBook(name)) return;
+  _flushCurrentBook();
+  var list = _loadBook(name);
+  if(!list || !list.length){
+    /* 内存里就是当前这本 */
+    list = (S.vocab === name && S.words && S.words.length) ? S.words : null;
+  }
+  if(!list || !list.length){ toast('这本词库读不出来，请重新导入'); return; }
+  _stashMainWords();
+  S.words = list;
+  S.vocab = name;
+  _resetRounds();
+  save();
+  try{ renderNine(); }catch(e){}
+  try{ if(typeof renderVocabName === 'function') renderVocabName(); }catch(e){}
+  toast('已切换到「' + name + '」（' + list.length + ' 词）', 3000);
+}
+function switchToMainVocab(){
+  _flushCurrentBook();          /* ★ 切走前先把当前 Anki 词库回存，防止丢进度 */
+  if(!_restoreMainWords()) return false;
+  _resetRounds();
+  save();
+  try{ renderNine(); }catch(e){}
+  try{ if(typeof renderVocabName === 'function') renderVocabName(); }catch(e){}
+  return true;
+}
+
+/* ---------- 词库列表（含每本 Anki 词库） ---------- */
+function renderVocab(){
+  _migrateAnkiBooks();
+  var box = $('vocabList');
+  if(!box) return;
+  var list = VOCABS.slice();
+  (S.ankiBooks || []).forEach(function(n){ if(list.indexOf(n) < 0) list.push(n); });
+  _vocabList = list;
+  var h = '';
+  list.forEach(function(v, i){
+    var on = (S.vocab === v) || (!S.vocab && i === 0);
+    var tag = _isAnkiBook(v) ? 'ANKI' : 'ROUND1';
+    h += '<div class="vrow' + (on ? ' on' : '') + '" data-i="' + i + '" onclick="pickVocab(' + i + ')">'
+       +   '<span class="dot"></span><span class="t">' + v + '</span><span class="tag">' + tag + '</span>'
+       + '</div>';
+  });
+  box.innerHTML = h;
+}
+function pickVocab(i){
+  var rows = document.querySelectorAll('#vocabList .vrow');
+  rows.forEach(function(r, j){ r.classList.toggle('on', j === i); });
+}
+function confirmVocab(){
+  var on = document.querySelector('#vocabList .vrow.on');
+  if(on && _vocabList.length){
+    var name = _vocabList[+on.dataset.i];
+    if(_isAnkiBook(name)){
+      switchToAnkiBook(name);
+    } else if(name.indexOf('高考3500') >= 0){
+      _flushCurrentBook();
+      switchTo3500(name);
+    } else {
+      _flushCurrentBook();
+      if(_isAnkiBook(S.vocab)) _restoreMainWords();
+      S.vocab = name;
+      save();
+      try{ renderNine(); }catch(e){}
+    }
+  }
+  hideMask('m-vocab');
+  toast('当前词库：' + S.vocab);
+}
+
+/* ==================================================
+   ★ v9.0 正式启用 FSRS 调度（Anki 23.10+ 默认算法）
+   后面的同名函数会覆盖前面残留的 SM-2 版本
+   ================================================== */
+function ankiGrade(x, grade){
+  var now = Date.now();
+  var rv = x.rv || (x.rv = {});
+  var g = grade === 'again' ? 1 : grade === 'hard' ? 2 : grade === 'easy' ? 4 : 3;
+  var retain = S.retain || 0.9;
+
+  if(!(rv.S > 0) && rv.ivl > 0){
+    /* ★ 老存档迁移：保留率 0.9 时 ivl≈S，别把已有进度重置掉 */
+    rv.S = Math.max(0.1, rv.ivl);
+    rv.D = rv.D || 5;
+    rv.S0 = rv.S0 || rv.S;
+  }
+  if(!(rv.S > 0)){
+    /* 真·第一次见这个评分 */
+    rv.S = Math.max(0.1, FSRS_W[g - 1]);
+    rv.S0 = rv.S;
+    rv.D = fD0(g);
+    rv.reps = (rv.reps || 0) + 1;
+    rv.lapses = (g === 1) ? (rv.lapses || 0) + 1 : (rv.lapses || 0);
+  }else{
+    var d = rv.D || fD0(3);
+    var elapsed = rv.last ? Math.max(0, (now - rv.last) / 86400000) : 0;
+    var r = fR(elapsed, rv.S);
+    if(g === 1){
+      rv.S = fForgetS(d, rv.S, r);
+      rv.lapses = (rv.lapses || 0) + 1;
+      rv.reps = 1;
+    }else{
+      rv.S = fRecallS(d, rv.S, r, g);
+      rv.reps = (rv.reps || 0) + 1;
+    }
+    rv.D = fNextD(d, g);
+  }
+
+  if(g === 1){
+    rv.ivl = 0;
+    rv.due = now + 10 * 60 * 1000;      /* 学习步骤：10 分钟后再来 */
+  }else{
+    rv.ivl = fIvl(rv.S, retain);        /* 按目标保留率换算天数 */
+    rv.due = now + rv.ivl * 86400000;
+  }
+  rv.g = g;
+  rv.last = now;
+  rv.next = rv.due;
+  if(rv.ef == null) rv.ef = 2.5;        /* 兼容老字段 */
+  rv.ef = Math.min(3.0, Math.max(1.3, 1.3 + (10 - (rv.D || 5)) * 0.17));
+  rv.stage = rv.ivl <= 1 ? 1 : rv.ivl <= 3 ? 2 : rv.ivl <= 7 ? 3 : rv.ivl <= 15 ? 4
+           : rv.ivl <= 30 ? 5 : rv.ivl <= 90 ? 6 : rv.ivl <= 180 ? 7 : 8;
+  return rv;
+}
+
+/* 按钮上显示：选这一档，下次隔多久 */
+function rvIvlText(x, grade){
+  var g = grade;
+  var rv = (x && x.rv) || {};
+  var retain = S.retain || 0.9;
+  if(g === 1) return '10分';
+  if(!(rv.S > 0)) return fIvl(Math.max(0.1, FSRS_W[g - 1]), retain) + '天';
+  var d = rv.D || fD0(3);
+  var elapsed = rv.last ? Math.max(0, (Date.now() - rv.last) / 86400000) : 0;
+  var r = fR(elapsed, rv.S);
+  var ns = fRecallS(d, rv.S, r, g);
+  return fIvl(ns, retain) + '天';
+}
+function rvUpdateBtns(){
+  var q = S.rvQueue || [];
+  if(!q.length) return;
+  var x = S.words.filter(function(o){ return o.w === q[0]; })[0];
+  var map = [['rvBtn1', 1, '忘了'], ['rvBtn2', 2, '模糊'], ['rvBtn3', 3, '会了'], ['rvBtn4', 4, '轻松']];
+  map.forEach(function(m){
+    var el = $(m[0]);
+    if(!el) return;
+    el.textContent = m[2] + ' · ' + rvIvlText(x, m[1]);
+  });
 }
 </script>
 <script>
