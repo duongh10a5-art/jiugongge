@@ -441,6 +441,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
           <button class="btn ghost" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">陪伴学习</button>
           <button class="btn ghost" onclick="openVocabPicker()" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">选择词库</button>
           <button class="btn ghost" onclick="openAnkiImport()" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">📥 Anki</button>
+          <button class="btn ghost" onclick="openSync()" style="min-height:calc(60*var(--S));font-size:calc(22*var(--S));padding:calc(10*var(--S)) calc(20*var(--S));">☁️ 同步</button>
         </span>
       </div>
 
@@ -725,6 +726,29 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
       <button class="btn" onclick="ankiPickFile()">选择文件</button>
       <button class="btn orange" id="ankiImportBtn" onclick="ankiDoImport()" disabled>导入</button>
       <button class="btn ghost" onclick="hideMask('m-anki')">取消</button>
+    </div>
+  </div>
+</div>
+<div class="mask hide" id="m-sync">
+  <div class="modal">
+    <h3>☁️ 云同步</h3>
+    <div style="font-size:calc(21*var(--S));color:var(--c-text2);line-height:1.7;">
+      · 用 GitHub Gist 免费存进度，手机和平板共用一份<br>
+      · 获取 token：打开 <b>github.com/settings/tokens</b> → Generate new token (classic) → 只勾 <b>gist</b> → 复制 ghp_ 开头那串<br>
+      · <b>第二台设备（平板）</b>：填同一个 token + 下面同一个 Gist ID，然后点「拉取」
+    </div>
+    <input id="syncToken" type="password" placeholder="粘贴 ghp_ 开头的 token" style="width:100%;margin-top:calc(12*var(--S));padding:calc(14*var(--S));border-radius:calc(14*var(--S));border:1px solid var(--c-line);font-size:calc(20*var(--S));background:var(--c-card);color:var(--c-text);box-sizing:border-box;">
+    <input id="syncGistId" type="text" placeholder="Gist ID（第一次留空，点上传会自动创建）" style="width:100%;margin-top:calc(12*var(--S));padding:calc(14*var(--S));border-radius:calc(14*var(--S));border:1px solid var(--c-line);font-size:calc(20*var(--S));background:var(--c-card);color:var(--c-text);box-sizing:border-box;">
+    <label style="display:flex;align-items:center;gap:calc(10*var(--S));margin-top:calc(16*var(--S));font-size:calc(22*var(--S));color:var(--c-text);">
+      <input type="checkbox" id="syncAuto" style="width:calc(28*var(--S));height:calc(28*var(--S));">
+      自动同步（背完自动上传，打开时自动拉取）
+    </label>
+    <div id="syncStat" style="margin-top:calc(14*var(--S));font-size:calc(21*var(--S));color:var(--c-text2);min-height:calc(34*var(--S));">未配置</div>
+    <div class="acts" style="flex-wrap:wrap;">
+      <button class="btn ghost" onclick="autoTest()">测试连接</button>
+      <button class="btn" onclick="doUpload()">⬆️ 上传</button>
+      <button class="btn orange" onclick="doDownload()">⬇️ 拉取</button>
+      <button class="btn ghost" onclick="hideMask('m-sync')">关闭</button>
     </div>
   </div>
 </div>
@@ -8010,7 +8034,271 @@ function rvUpdateBtns(){
     el.textContent = m[2] + ' · ' + rvIvlText(x, m[1]);
   });
 }
-</script>
+
+/* ==========================================================================
+   ★ 云同步（GitHub Gist）
+   - 把 localStorage 里所有 ks_ 开头的键，各存成一个 gist 文件
+   - 文件名用 base64url 编码，避免中文文件名问题
+   - 支持自动上传（save 后防抖）与启动时比对拉取
+   ========================================================================== */
+(function(){
+'use strict';
+
+var CONF_KEY = 'ks_sync_conf';
+var META_KEY = 'ks_sync_meta';
+
+function conf(){
+  try{ return JSON.parse(localStorage.getItem(CONF_KEY) || '{}'); }catch(e){ return {}; }
+}
+function setConf(o){
+  try{ localStorage.setItem(CONF_KEY, JSON.stringify(o)); }catch(e){}
+}
+function b64e(s){
+  try{
+    return btoa(unescape(encodeURIComponent(s)))
+      .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  }catch(e){ return 'x' + Date.now(); }
+}
+function b64d(s){
+  try{
+    s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+    while(s.length % 4) s += '=';
+    return decodeURIComponent(escape(atob(s)));
+  }catch(e){ return ''; }
+}
+function stat(msg){
+  var el = document.getElementById('syncStat');
+  if(el) el.innerHTML = msg;
+  var el2 = document.getElementById('syncStat2');
+  if(el2) el2.textContent = String(msg).replace(/<[^>]+>/g, '');
+}
+
+function keyList(){
+  var out = [];
+  try{
+    for(var i = 0; i < localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(/^ks_/.test(k) && k !== CONF_KEY && k !== META_KEY) out.push(k);
+    }
+  }catch(e){}
+  return out;
+}
+
+function collect(){
+  var files = {}, keys = keyList();
+  for(var i = 0; i < keys.length; i++){
+    var k = keys[i];
+    files['k_' + b64e(k) + '.json'] = { content: String(localStorage.getItem(k) || '') };
+  }
+  files['meta.json'] = {
+    content: JSON.stringify({ v: 1, updatedAt: Date.now(), n: keys.length })
+  };
+  return files;
+}
+
+function api(method, path, body){
+  var c = conf();
+  if(!c.token) return Promise.reject(new Error('还没填 token'));
+  var opt = {
+    method: method,
+    headers: {
+      'Authorization': 'token ' + c.token,
+      'Accept': 'application/vnd.github+json'
+    }
+  };
+  if(body){
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  return fetch('https://api.github.com' + path, opt).then(function(r){
+    return r.text().then(function(t){
+      var j = null;
+      try{ j = JSON.parse(t); }catch(e){}
+      if(!r.ok){
+        var msg = (j && j.message) || ('HTTP ' + r.status);
+        if(r.status === 401) msg = 'token 无效或已过期';
+        if(r.status === 404) msg = '找不到 Gist（可能 token 没勾 gist 权限）';
+        throw new Error(msg);
+      }
+      return j;
+    });
+  });
+}
+
+/* ---------- 上传 ---------- */
+function upload(silent){
+  var c = conf();
+  if(!c.token){
+    if(!silent) stat('❌ 先填 token');
+    return Promise.reject(new Error('no-token'));
+  }
+  var files = collect();
+  if(!silent) stat('⬆️ 正在上传 ' + keyList().length + ' 项…');
+  var p = c.gistId
+    ? api('PATCH', '/gists/' + c.gistId, { files: files })
+    : api('POST', '/gists', { description: '洗脑背刺 存档（自动同步）', public: false, files: files });
+  return p.then(function(j){
+    if(j && j.id && !c.gistId){
+      c.gistId = j.id;
+      setConf(c);
+    }
+    try{ localStorage.setItem(META_KEY, String(Date.now())); }catch(e){}
+    if(!silent) stat('✅ 已上传（' + new Date().toLocaleTimeString() + '）');
+    return j;
+  }).catch(function(e){
+    if(!silent) stat('❌ 上传失败：' + e.message);
+    throw e;
+  });
+}
+
+/* ---------- 下载 ---------- */
+function download(silent){
+  var c = conf();
+  if(!c.token) return Promise.reject(new Error('no-token'));
+  if(!c.gistId) return Promise.reject(new Error('还没上传过，先点「上传」建立云端存档'));
+
+  if(!silent && window.__ksDirty && !confirm('本地有还没上传的改动，拉取会被覆盖。继续吗？')) {
+    return Promise.reject(new Error('cancel'));
+  }
+  stat('⬇️ 正在拉取…');
+  return api('GET', '/gists/' + c.gistId).then(function(j){
+    var files = (j && j.files) || {};
+    var names = Object.keys(files);
+    var cnt = 0, skipped = 0, first = true;
+    for(var i = 0; i < names.length; i++){
+      var fn = names[i];
+      if(fn.indexOf('k_') !== 0) continue;
+      var key = b64d(fn.slice(2, fn.length - 5));
+      if(!key) continue;
+      var f = files[fn];
+      var content = f && f.content;
+      if(content === null || content === undefined){ skipped++; continue; }
+      try{ localStorage.setItem(key, content); cnt++; }catch(e){ skipped++; }
+      if(first){ first = false; }
+    }
+    var metaAt = Date.now();
+    try{
+      var mf = files['meta.json'];
+      if(mf && mf.content){ metaAt = (JSON.parse(mf.content).updatedAt) || metaAt; }
+      localStorage.setItem(META_KEY, String(metaAt));
+    }catch(e){}
+
+    stat('✅ 已拉取 ' + cnt + ' 项' + (skipped ? '（跳过 ' + skipped + '）' : '') + '，即将刷新…');
+    if(window.__ksDirty) window.__ksDirty = false;
+    setTimeout(function(){ location.reload(); }, 700);
+    return { count: cnt, skipped: skipped };
+  }).catch(function(e){
+    stat('❌ 拉取失败：' + e.message);
+    throw e;
+  });
+}
+
+/* ---------- UI 绑定 ---------- */
+function openSync(){
+  var c = conf();
+  var t = document.getElementById('syncToken');
+  if(t) t.value = c.token || '';
+  var g = document.getElementById('syncGistId');
+  if(g) g.value = c.gistId || '';
+  var a = document.getElementById('syncAuto');
+  if(a) a.checked = !!c.auto;
+  var last = localStorage.getItem(META_KEY);
+  stat(c.gistId
+    ? ('已连接 Gist ' + c.gistId.slice(0, 8) + '…' + (last ? '｜上次同步 ' + new Date(parseInt(last, 10)).toLocaleString() : ''))
+    : '还没连接：填 token → 点「上传」自动创建');
+  var m = document.getElementById('m-sync');
+  if(m) m.classList.remove('hide');
+}
+function saveSyncConf(){
+  var c = conf();
+  var t = document.getElementById('syncToken');
+  var g = document.getElementById('syncGistId');
+  var a = document.getElementById('syncAuto');
+  c.token = t ? t.value.trim() : (c.token || '');
+  c.gistId = g ? g.value.trim() : (c.gistId || '');
+  c.auto = !!(a && a.checked);
+  setConf(c);
+  return c;
+}
+function doUpload(){
+  saveSyncConf();
+  upload(false);
+}
+function doDownload(){
+  saveSyncConf();
+  download(false);
+}
+function autoTest(){
+  saveSyncConf();
+  var c = conf();
+  if(!c.token){ stat('❌ 先填 token'); return; }
+  stat('🔍 测试连接…');
+  api('GET', '/user').then(function(j){
+    stat('✅ 连接成功，账号：<b>' + (j.login || '?') + '</b>' + (c.gistId ? '' : '<br>再点「上传」建立云端存档'));
+  }).catch(function(e){
+    stat('❌ ' + e.message);
+  });
+}
+
+/* ---------- 自动同步 ---------- */
+var _origSave = window.save;
+if(typeof _origSave === 'function'){
+  window.save = function(){
+    try{ window.__ksDirty = true; }catch(e){}
+    return _origSave.apply(this, arguments);
+  };
+}
+
+function autoUploadTick(){
+  var c = conf();
+  if(!c.auto || !c.token || !c.gistId) return;
+  if(!window.__ksDirty) return;
+  window.__ksDirty = false;
+  upload(true).catch(function(){ window.__ksDirty = true; });
+}
+function autoPullOnce(){
+  var c = conf();
+  if(!c.auto || !c.token || !c.gistId) return;
+  api('GET', '/gists/' + c.gistId).then(function(j){
+    var mf = j && j.files && j.files['meta.json'];
+    if(!mf || !mf.content) return;
+    var remoteAt = 0;
+    try{ remoteAt = JSON.parse(mf.content).updatedAt || 0; }catch(e){}
+    var localAt = parseInt(localStorage.getItem(META_KEY) || '0', 10);
+    if(remoteAt > localAt + 5000 && !window.__ksDirty){
+      download(true).catch(function(){});
+    }
+  }).catch(function(){});
+}
+
+/* ---------- 导出到全局 ---------- */
+window.openSync = openSync;
+window.saveSyncConf = saveSyncConf;
+window.doUpload = doUpload;
+window.doDownload = doDownload;
+window.autoTest = autoTest;
+window.syncUpload = upload;
+window.syncDownload = download;
+window.syncConf = conf;
+
+setTimeout(function(){
+  try{ autoPullOnce(); }catch(e){}
+  setInterval(function(){ try{ autoUploadTick(); }catch(e){} }, 45000);
+  window.addEventListener('beforeunload', function(){
+    var c = conf();
+    if(c.auto && c.token && c.gistId && window.__ksDirty){
+      try{
+        fetch('https://api.github.com/gists/' + c.gistId, {
+          method: 'PATCH', keepalive: true,
+          headers: { 'Authorization': 'token ' + c.token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: collect() })
+        });
+      }catch(e){}
+    }
+  });
+}, 1500);
+
+})();</script>
 <script>
 /* ===== S2：全部逻辑已移入 app.js，此处只负责启动 ===== */
 document.addEventListener('DOMContentLoaded', initApp);
