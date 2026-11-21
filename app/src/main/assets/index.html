@@ -8128,7 +8128,7 @@ function keyList(){
   try{
     for(var i = 0; i < localStorage.length; i++){
       var k = localStorage.key(i);
-      if(/^ks_/.test(k) && k !== CONF_KEY && k !== META_KEY) out.push(k);
+      if(/^ks_/.test(k) && k !== CONF_KEY && k !== META_KEY && k.indexOf('ks_book_') !== 0) out.push(k);
     }
   }catch(e){}
   return out;
