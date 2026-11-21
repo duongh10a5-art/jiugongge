@@ -733,7 +733,8 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
     <h3>从 Anki 导入词库</h3>
     <div style="font-size:calc(22*var(--S));color:var(--c-text2);line-height:1.7;">
       · 直接选 AnkiDroid 导出的 <b>.apkg / .colpkg</b> 就行，会自动解包读词<br>
-      · 也支持导出的笔记文本（.txt / .csv / .tsv）<br>
+      · <b style="color:var(--c-primary);">.apkg 还会带上 Anki 的复习进度</b>（记忆强度 / 难度 / 到期日），已背过的词不用重背<br>
+      · 也支持导出的笔记文本（.txt / .csv / .tsv），文本不带进度<br>
       · 每天重新导一次不会重复，学过的词进度保留<br>
       · 中文释义与音标自动拆开
     </div>
@@ -3414,7 +3415,11 @@ function sqliteReader(bytes){
           var pl = varintIn(bytes, co);
           var rid = varintIn(bytes, pl.end);
           if(rid.end > bytes.length) continue;
-          rows.push(parseRecord(readPayload(rid.end, pl.val), enc));
+          var rowRec = parseRecord(readPayload(rid.end, pl.val), enc);
+          /* ★ rowid：INTEGER PRIMARY KEY 是 rowid 别名，SQLite 不存储该列（读出 null），
+             真值在 b-tree cell 里，挂到行的 __rid 上备用 */
+          try{ rowRec.__rid = rid.val; }catch(e){}
+          rows.push(rowRec);
         }
       } else if(type === 5){
         for(var i2 = 0; i2 < cellCount; i2++){
@@ -3476,6 +3481,106 @@ function notesFromDb(bytes){
   return out;
 }
 
+/* ==========================================================================
+   ★ 进度导入：读 cards 表 + Anki 的 FSRS 记忆状态
+   - cards.data = {"s":稳定度,"d":难度,"lrt":上次复习秒,"dr":0.9,"decay":0.154}
+   - 本 App 的 rv 结构：{S,D,S0,reps,lapses,ivl,due,last,next,ef,stage}
+   - Anki 的 due 是「天数」，基准是 col.crt
+   ========================================================================== */
+function tableInfo(R, name){
+  var master = R.rowsOf(1);
+  for(var i = 0; i < master.length; i++){
+    var r = master[i];
+    if(r && r[1] === name){
+      var root = r[3];
+      root = (typeof root === 'number') ? root : parseInt(root, 10);
+      return { root: root, sql: (typeof r[4] === 'string' ? r[4] : '') };
+    }
+  }
+  return null;
+}
+function colIndexByName(sql, colName){
+  var m = /\(([\s\S]*)\)/.exec(sql || '');
+  if(!m) return -1;
+  var body = m[1];
+  // 去掉注释行
+  body = body.replace(/--[^\n]*/g, '');
+  var names = [], parts = body.split(',');
+  for(var i = 0; i < parts.length; i++){
+    var p = parts[i].trim();
+    if(!p) continue;
+    var first = p.split(/\s+/)[0].replace(/^[`"'\[]|[`"'\]]$/g, '').toLowerCase();
+    if(first) names.push(first);
+  }
+  return names.indexOf(colName.toLowerCase());
+}
+function progressFromDb(db){
+  var R = sqliteReader(db);
+  /* --- col.crt：due 天数的基准时间戳 --- */
+  var crt = 0;
+  var ci = tableInfo(R, 'col');
+  if(ci && ci.root){
+    var idx = colIndexByName(ci.sql, 'crt');
+    if(idx < 0) idx = 1;
+    var colRows = R.rowsOf(ci.root);
+    if(colRows.length && colRows[0][idx] != null) crt = Number(colRows[0][idx]) || 0;
+  }
+  /* --- notes：noteId → 单词 --- */
+  var ni = tableInfo(R, 'notes');
+  if(!ni || !ni.root) throw new Error('这个包里没有 notes 表');
+  var nrows = R.rowsOf(ni.root);
+  var wordOf = {};
+  for(var i = 0; i < nrows.length; i++){
+    var r = nrows[i];
+    if(!r || typeof r[6] !== 'string') continue;
+    var w = cleanField(r[6].split('\x1f')[0] || '');
+    if(!w) continue;
+    var noteId = (r[0] != null) ? r[0] : r.__rid;   /* id 是 rowid 别名，可能为 null */
+    if(noteId == null) continue;
+    wordOf[noteId] = w.toLowerCase();
+  }
+  /* --- cards：调度状态 --- */
+  var ca = tableInfo(R, 'cards');
+  if(!ca || !ca.root) throw new Error('Scheduling');
+  var crows = R.rowsOf(ca.root);
+  var out = {}, stat = { total: 0, learned: 0, fresh: 0, noS: 0, noWord: 0, relearn: 0 };
+  for(var j = 0; j < crows.length; j++){
+    var c = crows[j];
+    if(!c) continue;
+    stat.total++;
+    var nid = c[1], type = c[6], due = c[8], ivl = c[9], factor = c[10], reps = c[11], lapses = c[12], data = c[17];
+    var word = wordOf[nid];
+    if(!word){ stat.noWord++; continue; }
+    if(type !== 2 && type !== 3){ stat.fresh++; continue; }   /* 0=新卡 1=学习中 */
+    var fs = null;
+    if(typeof data === 'string' && data.charAt(0) === '{'){
+      try{ fs = JSON.parse(data); }catch(e){ fs = null; }
+    }
+    var S = (fs && fs.s) ? Number(fs.s) : 0;
+    if(!(S > 0)){ stat.noS++; continue; }
+    var D = (fs && fs.d) ? Math.min(10, Math.max(1, Number(fs.d))) : 5;
+    var lrt = (fs && fs.lrt) ? Number(fs.lrt) : 0;
+    var dueTs = crt ? (crt + Number(due || 0) * 86400) * 1000 : Date.now();
+    var iv = Math.max(1, Math.round(Number(ivl) || S));
+    out[word] = {
+      S: Math.round(S * 10000) / 10000,
+      D: Math.round(D * 10000) / 10000,
+      S0: Math.round(S * 10000) / 10000,
+      reps: Number(reps) || 1,
+      lapses: Number(lapses) || 0,
+      ivl: iv,
+      due: dueTs,
+      last: lrt ? lrt * 1000 : dueTs,
+      next: dueTs,
+      ef: Math.round(Number(factor) || 2500) / 1000,
+      stage: iv <= 1 ? 1 : iv <= 3 ? 2 : iv <= 7 ? 3 : iv <= 15 ? 4 : iv <= 30 ? 5 : iv <= 90 ? 6 : iv <= 180 ? 7 : 8,
+      src: 'anki'
+    };
+    if(type === 3) stat.relearn++; else stat.learned++;
+  }
+  return { crt: crt, words: out, stat: stat };
+}
+
 /* ---------- 4. 对外入口 ---------- */
 function parseApkgBuffer(arrayBuffer){
   return new Promise(function(resolve, reject){
@@ -3523,7 +3628,57 @@ function parseApkgBuffer(arrayBuffer){
   });
 }
 
+/* ---------- 5. 进度导入入口（与词库导入共用 ZIP/解压流程） ---------- */
+function loadCollectionDb(arrayBuffer){
+  return new Promise(function(resolve, reject){
+    var bytes = new Uint8Array(arrayBuffer);
+    if(bytes.length < 4) return reject(new Error('文件是空的'));
+    if(!(bytes[0] === 0x50 && bytes[1] === 0x4b)) return reject(new Error('这不是 apkg/colpkg（压缩包）'));
+    var list = zipList(bytes);
+    if(!list || !list.length) return reject(new Error('压缩包目录读不出来'));
+    var prefer = ['collection.anki21', 'collection.anki2'];
+    var ent = null;
+    for(var i = 0; i < prefer.length && !ent; i++){
+      for(var j = 0; j < list.length; j++){
+        if(list[j].name === prefer[i]){ ent = list[j]; break; }
+      }
+    }
+    if(!ent){
+      for(var k = 0; k < list.length; k++){
+        if(/^collection/.test(list[k].name)){ ent = list[k]; break; }
+      }
+    }
+    if(!ent) return reject(new Error('包里没找到 collection 数据库'));
+    if(ent.name === 'collection.anki21b') return reject(new Error('ZSTD'));
+    var raw = zipEntryData(bytes, ent);
+    if(!raw) return reject(new Error('读取 ' + ent.name + ' 失败'));
+    var task;
+    if(ent.method === 0) task = Promise.resolve(raw);
+    else if(ent.method === 8) task = inflateRaw(raw);
+    else return reject(new Error('不支持的压缩方式（' + ent.method + '）'));
+    task.then(function(db){
+      if(db[0] === 0x28 && db[1] === 0xB5 && db[2] === 0x2F && db[3] === 0xFD) return reject(new Error('ZSTD'));
+      if(!(db[0] === 0x53 && db[1] === 0x51 && db[2] === 0x4C)) return reject(new Error('数据库格式不认识'));
+      resolve(db);
+    }, reject);
+  });
+}
+function parseApkgProgress(arrayBuffer){
+  return loadCollectionDb(arrayBuffer).then(function(db){
+    try{
+      var res = progressFromDb(db);
+      if(!res.stat.learned && !res.stat.relearn) throw new Error('NoProgress');
+      return res;
+    }catch(e){
+      if(e && e.message === 'Scheduling') throw new Error('这个 apkg 没带调度信息：导出时要勾选「包含调度信息」');
+      if(e && e.message === 'NoProgress') throw new Error('包里没有任何已复习的卡片');
+      throw e;
+    }
+  });
+}
+
 window.parseApkgBuffer = parseApkgBuffer;
+window.parseApkgProgress = parseApkgProgress;
 })();
 
 /* ===== KingSchool 单词速记 · 主程序 (S2) =====
@@ -7754,6 +7909,8 @@ function ankiFileChosen(ev){
   if(!file) return;
   var fname = file.name || '';
   var p = $('ankiPreview');
+  /* ★ 每次选文件先清掉上次解析的进度，避免 .txt 导入误用上一份 .apkg 的进度 */
+  _ankiProg = null; _ankiProgErr = '';
   if(/\.(apkg|colpkg)$/i.test(fname)){
     _ankiImportFromApkg(file, p);
     return;
@@ -7767,20 +7924,41 @@ function ankiFileChosen(ev){
   };
   fr.readAsText(file, 'UTF-8');
 }
-/* ★ v14：.apkg / .colpkg 直读（ZIP 里的 SQLite） */
+/* ★ v15：.apkg / .colpkg 直读（ZIP 里的 SQLite）
+   ★ v16：同一个包顺手把 Anki 的复习进度（FSRS 记忆状态）读出来 */
+var _ankiProg = null;      /* 本次解析到的进度表 {words:{word:rv}, stat:{}} */
+var _ankiProgErr = '';
 function _ankiImportFromApkg(file, p){
   var b = $('ankiImportBtn');
   if(b) b.disabled = true;
+  _ankiProg = null; _ankiProgErr = ''; _ankiRows = null;
   if(p) p.innerHTML = '⏳ 正在解析 <b>' + (file.name || '') + '</b><br>'
     + '<span style="font-size:12px;color:#999;">' + Math.round((file.size || 0) / 1024) + ' KB，请稍等…</span>';
   var fr = new FileReader();
   fr.onload = function(){
+    var buf = fr.result;
+    var goWords = function(){
+      try{
+        if(typeof parseApkgBuffer !== 'function') throw new Error('解析模块没加载');
+        parseApkgBuffer(buf).then(function(rows){
+          _finishAnkiRows(rows, '', p);
+        }, function(err){ _ankiApkgError(err, p); });
+      }catch(e){ _ankiApkgError(e, p); }
+    };
+    /* ① 先读复习进度（能读就读，读不到不影响导词） */
     try{
-      if(typeof parseApkgBuffer !== 'function') throw new Error('解析模块没加载');
-      parseApkgBuffer(fr.result).then(function(rows){
-        _finishAnkiRows(rows, '', p);
-      }, function(err){ _ankiApkgError(err, p); });
-    }catch(e){ _ankiApkgError(e, p); }
+      if(typeof parseApkgProgress === 'function'){
+        parseApkgProgress(buf).then(function(res){
+          _ankiProg = res;
+          goWords();
+        }, function(err){
+          _ankiProgErr = String((err && err.message) || err || '');
+          goWords();
+        });
+        return;
+      }
+    }catch(e){ _ankiProgErr = String(e && e.message || e); }
+    goWords();
   };
   fr.onerror = function(){ _ankiApkgError(new Error('文件读不出来'), p); };
   fr.readAsArrayBuffer(file);
@@ -7800,6 +7978,37 @@ function _ankiApkgError(err, p){
     + (hint ? '<br><span style="color:#e05252;font-size:12px;">' + hint + '</span>' : '');
 }
 /* 文本 / apkg 共用收尾 */
+function _ankiProgHtml(){
+  if(_ankiProg){
+    var st = _ankiProg.stat || {};
+    var n = (st.learned || 0) + (st.relearn || 0);
+    return '<br>🧠 含 Anki 复习进度：<b style="color:var(--c-primary);">' + n + '</b> 个已学词'
+      + (st.fresh ? '（另有 ' + st.fresh + ' 个新卡，保持未学）' : '')
+      + '<br><span style="font-size:12px;color:#999;">导入后这些词会继承记忆强度/难度/到期日，直接进复习队列，不用重背</span>';
+  }
+  if(_ankiProgErr) return '<br><span style="color:#e05252;font-size:12px;">⚠️ 进度没读到：' + _ankiProgErr + '</span>（本次只导词）';
+  return '';
+}
+/* ★ 把 Anki 的进度写进词表（本地已有真实进度的词不覆盖） */
+function _applyAnkiProgress(list, prog){
+  var map = (prog && prog.words) || {};
+  var have = {}, hit = 0, keep = 0, fresh = 0;
+  (list || []).forEach(function(x){
+    if(!x || !x.w) return;
+    var k = String(x.w).trim().toLowerCase();
+    have[k] = 1;
+    var v = map[k];
+    if(!v) return;
+    /* 本地已经背过（且不是上次从 Anki 导的）→ 保留本地，别回退 */
+    if(x.rv && x.rv.reps > 0 && x.rv.src !== 'anki'){ keep++; return; }
+    x.rv = v;
+    x.learn = 'learned';                       /* 进得了复习队列（isGrad 要求 learned/learning） */
+    if(x.pre !== 'known' && x.pre !== 'unknown') x.pre = 'known';
+    hit++;
+  });
+  Object.keys(map).forEach(function(k){ if(!have[k]) fresh++; });   /* Anki 有、本词库没有 */
+  return { hit: hit, keep: keep, miss: fresh };
+}
 function _finishAnkiRows(rows, bookName, p){
   if(!rows || !rows.length){
     if(p) p.textContent = '没识别到词条。请确认每行是「单词+制表符+释义」或「单词,释义」。';
@@ -7812,6 +8021,7 @@ function _finishAnkiRows(rows, bookName, p){
   if(p) p.innerHTML = '✅ 词库：<b>' + _showName + '</b><br>'
     + '识别到 <b style="color:var(--c-primary);">' + rows.length + '</b> 个词'
     + (old.length ? '<br>已有 ' + old.length + ' 词，重复的会自动合并、进度保留' : '')
+    + _ankiProgHtml()
     + '<br>示例：' + rows.slice(0, 3).map(function(r){ return r.w; }).join(' / ');
   var b = $('ankiImportBtn');
   if(b) b.disabled = false;
@@ -7891,6 +8101,12 @@ function ankiDoImport(){
   if(!S.ankiBooks) S.ankiBooks = [];
   if(S.ankiBooks.indexOf(bookName) < 0) S.ankiBooks.push(bookName);
 
+  /* ★ v16：把 Anki 复习进度写进这份词表（必须在 _saveBook 之前，否则存的是旧对象） */
+  var _progR = null;
+  if(_ankiProg && _ankiProg.words){
+    try{ _progR = _applyAnkiProgress(nw, _ankiProg); }catch(e){ _progR = null; }
+  }
+
   var saved = _saveBook(bookName, nw);
   S.words = nw;
   S.vocab = bookName;
@@ -7899,8 +8115,14 @@ function ankiDoImport(){
   try{ renderNine(); }catch(e){}
   try{ if(typeof renderVocabName === 'function') renderVocabName(); }catch(e){}
   hideMask('m-anki');
+  var _pTxt = '';
+  if(_progR && _progR.hit) _pTxt = '｜🧠 继承进度 ' + _progR.hit + ' 词' + (_progR.keep ? '（保留本地 ' + _progR.keep + '）' : '');
   toast('✅ 词库「' + bookName + '」：' + nw.length + ' 词（新增 ' + added + '，合并 ' + kept + '）'
-        + (saved ? '' : ' ⚠️保存失败'), 4500);
+        + _pTxt + (saved ? '' : ' ⚠️保存失败'), 5000);
+  if(_progR && _progR.hit){
+    var d0 = statsData();
+    setTimeout(function(){ toast('📊 现在有 ' + d0.due + ' 个词到期该复习，去「复习」直接接着 Anki 的进度背', 5200); }, 5200);
+  }
 }
 
 /* ---------- 切换 ---------- */
@@ -8389,7 +8611,8 @@ setTimeout(function(){
   });
 }, 1500);
 
-})();</script>
+})();
+</script>
 <script>
 /* ===== S2：全部逻辑已移入 app.js，此处只负责启动 ===== */
 document.addEventListener('DOMContentLoaded', initApp);
