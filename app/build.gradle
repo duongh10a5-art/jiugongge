@@ -8,8 +8,8 @@ android {
         applicationId 'com.dingxiao.jiugongge'
         minSdk 24
         targetSdk 34
-        versionCode 15
-        versionName "v9.6"
+        versionCode 16
+        versionName "v9.7"
     }
     signingConfigs {
         fix {

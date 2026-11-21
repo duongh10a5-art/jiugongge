@@ -715,7 +715,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
 </div>
 
 <!-- 隐藏：恢复存档文件选择 -->
-<input type="file" id="restoreFile" accept=".json,application/json" style="display:none;" onchange="restoreBackup(this)">
+<input type="file" id="restoreFile" style="display:none;" onchange="restoreBackup(this)">
 
 <!-- ===== 弹层 ===== -->
 <div class="mask hide" id="m-vocab">
@@ -738,7 +738,7 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
       · 每天重新导一次不会重复，学过的词进度保留<br>
       · 中文释义与音标自动拆开
     </div>
-    <input type="file" id="ankiFile" accept=".txt,.csv,.tsv,.apkg,.colpkg" style="display:none" onchange="ankiFileChosen(event)">
+    <input type="file" id="ankiFile" style="display:none" onchange="ankiFileChosen(event)">
     <div id="ankiPreview" style="margin-top:calc(14*var(--S));font-size:calc(22*var(--S));color:var(--c-text2);">还没有选择文件</div>
     <div class="acts">
       <button class="btn" onclick="ankiPickFile()">选择文件</button>
@@ -5323,7 +5323,7 @@ function renderStats(){
      + '<div style="font-size:calc(22*var(--S));color:#888;line-height:1.7;margin-bottom:calc(16*var(--S));">'
      + '支持 CSV / TXT：每行 <b>单词,释义</b>（逗号或 Tab 分隔），可直接用 Anki 导出的 CSV。<br>'
      + '同名单词自动跳过，不会覆盖已有进度。</div>'
-     + '<input type="file" id="csvFile" accept=".csv,.txt,.tsv" style="display:none;" onchange="importCsv(this)">'
+     + '<input type="file" id="csvFile" style="display:none;" onchange="importCsv(this)">'
      + '<button class="btn" style="width:100%;" onclick="document.getElementById(\'csvFile\').click()">导入 CSV / TXT 词表</button>'
      + '<div class="flex gap" style="margin-top:calc(14*var(--S));">'
      +   '<button class="btn ghost" style="flex:1;min-height:calc(76*var(--S));font-size:calc(24*var(--S));" onclick="backupNow()">💾 备份存档</button>'
