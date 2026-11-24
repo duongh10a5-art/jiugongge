@@ -739,6 +739,10 @@ button,.btn,.wcard,.cutrow,.ball,.row,.vrow{touch-action:manipulation;}
       · 中文释义与音标自动拆开
     </div>
     <input type="file" id="ankiFile" style="display:none" onchange="ankiFileChosen(event)">
+    <label style="display:flex;align-items:center;gap:calc(10*var(--S));margin-top:calc(12*var(--S));font-size:calc(21*var(--S));color:var(--c-text2);">
+      <input type="checkbox" id="ankiMergeChk" style="width:calc(26*var(--S));height:calc(26*var(--S));" onchange="S.ankiMerge = this.checked ? 1 : 0; save();" checked>
+      与已有进度「合并」（同一个词两边都背过 → 按复习次数加权平均，不丢任何一个包的进度）
+    </label>
     <div id="ankiPreview" style="margin-top:calc(14*var(--S));font-size:calc(22*var(--S));color:var(--c-text2);">还没有选择文件</div>
     <div class="acts">
       <button class="btn" onclick="ankiPickFile()">选择文件</button>
@@ -3825,7 +3829,7 @@ function restoreBackup(inp){
         for(var k in data){ S[k] = data[k]; }   /* ★ 全量恢复：含统计/日志/快照/组进度等所有字段 */
         save();
         toast('✅ 存档已恢复，正在刷新…', 2400);
-        setTimeout(function(){ location.reload(); }, 900);
+        setTimeout(function(){ _softReload(); }, 500);
       }catch(e){ toast('恢复失败：' + (e.message || e), 2800); }
     };
     rd.readAsText(f);
@@ -3848,6 +3852,15 @@ function load(){
   }catch(e){}
 }
 
+/* 拉取/恢复后原地重绘：iOS Safari 下 location.reload() 常常不触发，会卡在“即将刷新” */
+function _softReload(){
+  try{ load(); }catch(e){}
+  try{ var m = document.getElementById('m-sync'); if(m) m.classList.add('hide'); }catch(e){}
+  try{ S.screen = 'home'; }catch(e){}
+  try{ go('home', true); }catch(e){}
+  try{ if(typeof renderHome === 'function') renderHome(); }catch(e){}
+  try{ toast('✅ 已更新', 1600); }catch(e){}
+}
 /* ---------- 通用 ---------- */
 function $(id){ return document.getElementById(id); }
 function toast(msg, ms){
@@ -4456,6 +4469,8 @@ function countUnk(){
    ================================================== */
 function dayKey(dt){
   dt = dt || new Date();
+  /* ★ v3：凌晨 4 点才算新的一天（Anki 默认 day cutoff=4） */
+  if(dt.getHours() < 4){ dt = new Date(dt.getTime() - 86400000); }
   var m = dt.getMonth() + 1, dd = dt.getDate();
   return dt.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd;
 }
@@ -5066,6 +5081,8 @@ function setGoal(kind, v){
   save();
   var el = (kind === 'new') ? $('newGoalVal') : (kind === 'ret') ? $('retainVal') : $('revGoalVal');
   if(el) el.textContent = (kind === 'ret') ? (v + '%') : v;
+  var num = (kind === 'new') ? $('newGoalNum') : (kind === 'rev') ? $('revGoalNum') : null;
+  if(num && String(num.value) !== String(v)) num.value = v;
 }
 function curveSvg(){
   var mine = curveData();
@@ -5196,6 +5213,17 @@ function renderStats(){
   var stTab = S.statsTab || 'curve';
   var h = '<div class="flex" style="background:#fff;border-radius:calc(20*var(--S));margin-bottom:calc(18*var(--S));box-shadow:0 calc(2*var(--S)) calc(10*var(--S)) rgba(0,0,0,.05);">'
     + statsTabBtn('curve', '遗忘曲线') + statsTabBtn('learn', '学习情况') + statsTabBtn('persist', '记忆持久度') + '</div>';
+  /* ★ v9.8.2：今日额度胶囊（3 个 Tab 都能直接改，不用先切到「学习情况」） */
+  var _gn = (S.newGoal == null) ? 20 : S.newGoal;
+  var _gr = (S.revGoal == null) ? 100 : S.revGoal;
+  var _inSt = 'width:calc(120*var(--S));font-size:calc(21*var(--S));padding:calc(6*var(--S)) calc(8*var(--S));border:1px solid #DDD;border-radius:calc(10*var(--S));box-sizing:border-box;text-align:center;';
+  h += '<div class="statcard"><div class="card-t">今日额度（随时可改）</div>'
+     + '<div style="display:flex;align-items:center;gap:calc(10*var(--S));flex-wrap:wrap;font-size:calc(21*var(--S));color:#666;">'
+     +   '新词 <input id="newGoalNum" type="number" min="0" max="500" value="' + _gn + '" onchange="setGoal(\'new\', this.value)" style="' + _inSt + '"> 个/天'
+     +   ' &nbsp;复习 <input id="revGoalNum" type="number" min="0" max="999" value="' + _gr + '" onchange="setGoal(\'rev\', this.value)" style="' + _inSt + '"> 个/天'
+     + '</div>'
+     + '<div style="font-size:calc(18*var(--S));color:#AAA;margin-top:calc(8*var(--S));line-height:1.5;">改完立刻生效：下次点「开始复习」就按新额度抽词；新词是从「从没学过的」里随机抽的。</div>'
+     + '</div>';
   if(stTab === 'curve'){
     h += '<div style="background:#fff;padding:calc(6*var(--S)) calc(6*var(--S)) calc(10*var(--S));margin:0 calc(-24*var(--S));">' + curveSvg() + '</div>';
     box.innerHTML = h; return;
@@ -5309,15 +5337,55 @@ function renderStats(){
   h += '<div class="statcard"><div class="card-t">复习计划（每日可调）</div>'
      + '<div style="font-size:calc(22*var(--S));color:#888;line-height:1.7;margin-bottom:calc(14*var(--S));">'
      + '到期复习词会按「逾期越久越靠前」排队；每日上限到了会自动停，剩下的留到明天。</div>'
-     + '<div class="strow"><span>每日新学上限</span><b id="newGoalVal">' + (S.newGoal == null ? 20 : S.newGoal) + '</b></div>'
+     + '<div class="strow"><span>每日新词数</span><b id="newGoalVal">' + (S.newGoal == null ? 20 : S.newGoal) + '</b></div>'
      + '<input type="range" min="0" max="60" step="5" value="' + (S.newGoal == null ? 20 : S.newGoal) + '" oninput="setGoal(\'new\', this.value)" style="width:100%;">'
-     + '<div class="strow" style="margin-top:calc(14*var(--S));"><span>每日复习上限</span><b id="revGoalVal">' + (S.revGoal == null ? 100 : S.revGoal) + '</b></div>'
+     + '<div class="strow" style="margin-top:calc(14*var(--S));"><span>每日复习数</span><b id="revGoalVal">' + (S.revGoal == null ? 100 : S.revGoal) + '</b></div>'
      + '<input type="range" min="0" max="300" step="10" value="' + (S.revGoal == null ? 100 : S.revGoal) + '" oninput="setGoal(\'rev\', this.value)" style="width:100%;">'
      + '<div class="strow" style="margin-top:calc(14*var(--S));"><span>目标保留率（越高复习越勤）</span><b id="retainVal">' + Math.round((S.retain == null ? 0.9 : S.retain) * 100) + '%</b></div>'
      + '<input type="range" min="80" max="95" step="5" value="' + Math.round((S.retain == null ? 0.9 : S.retain) * 100) + '" oninput="setGoal(\'ret\', this.value)" style="width:100%;">'
      + '<button class="btn" style="width:100%;margin-top:calc(16*var(--S));" onclick="copyTodayWords()">📋 复制今日复习词（拿去让 AI 写文章）</button>'
      + '<div style="font-size:calc(20*var(--S));color:#AAA;margin-top:calc(10*var(--S));line-height:1.6;">'
      + '复制后粘贴到 DeepSeek / 豆包等任意 AI 对话框，说「用它写一篇短文」即可，<b>不需要花这里的额度</b>。</div>'
+     + '</div>';
+  /* ★ v9.9 Anki 进阶参数 */
+  (function(){
+    var _row = function(label, key, def, min, max, unit){
+      var val = (S[key] == null) ? def : S[key];
+      return '<div class="strow" style="margin-top:calc(12*var(--S));"><span>' + label + '</span>'
+        + '<input id="np_' + key + '" type="number" min="' + min + '" max="' + max + '" value="' + val + '"'
+        + ' onchange="setNum(\'' + key + '\', this.value, ' + def + ', ' + min + ', ' + max + ')"'
+        + ' style="width:calc(120*var(--S));font-size:calc(21*var(--S));padding:calc(6*var(--S)) calc(8*var(--S));border:1px solid #DDD;border-radius:calc(10*var(--S));box-sizing:border-box;text-align:center;">'
+        + '</div>';
+    };
+    var _lc = leechCount();
+    h += '<div class="statcard"><div class="card-t">Anki 参数（进阶，改完立即生效）</div>'
+       + '<div style="font-size:calc(19*var(--S));color:#888;line-height:1.6;">对齐 Anki 的 learning steps 与上限；不懂就保持默认。</div>'
+       + _row('新卡答错等多久（分钟）', 'stepAgain', 1, 1, 240)
+       + _row('复习卡答错等多久（分钟）', 'stepRelearn', 10, 1, 240)
+       + _row('答「模糊」等多久（分钟）', 'stepHard', 10, 1, 240)
+       + _row('本轮最多重来（次）', 'rlMax', 2, 0, 9)
+       + _row('最长间隔上限（天）', 'maxIvl', 365, 1, 3650)
+       + _row('水蛭阈值（忘记几次算水蛭）', 'leechTh', 8, 1, 50)
+       + '<div class="strow" style="margin-top:calc(14*var(--S));"><span>记忆曲线校准系数</span><b>' + (S.calib == null ? '1（未校准）' : S.calib) + '</b></div>'
+       + '<div style="font-size:calc(18*var(--S));color:#AAA;margin-top:calc(6*var(--S));line-height:1.5;">拿你的真实复习记录和预测曲线对比：系数 &lt; 1 说明你忘得比预测更快（自动缩短间隔），&gt; 1 说明记得更牢（间隔拉长）。</div>'
+       + '<div style="display:flex;gap:calc(10*var(--S));margin-top:calc(10*var(--S));flex-wrap:wrap;">'
+       +   '<button class="btn ghost" style="flex:1;min-width:calc(150*var(--S));" onclick="fsrsCalib()">自动校准（用实测数据）</button>'
+       +   '<button class="btn ghost" style="flex:1;min-width:calc(120*var(--S));" onclick="setNum(\'calib\', 1, 1, 0.5, 2)">恢复默认 1</button>'
+       + '</div>'
+       + '<div class="strow" style="margin-top:calc(14*var(--S));"><span>🐛 水蛭词（老是忘）</span><b>' + _lc + ' 个</b></div>'
+       + (_lc
+           ? '<button class="btn ghost" style="width:100%;margin-top:calc(12*var(--S));" onclick="leechReset()">把水蛭词退回「未学」，重新学一遍</button>'
+           : '<div style="font-size:calc(18*var(--S));color:#AAA;margin-top:calc(6*var(--S));">某个词忘记次数到达阈值就会自动打 🐛 标记。</div>')
+       + '</div>';
+  })();
+  /* ★ v9.8 高级 / 开发者 */
+  h += '<div class="statcard"><div class="card-t">高级 / 开发者</div>'
+     + '<div style="font-size:calc(20*var(--S));color:#888;line-height:1.6;">改代码前自动留档；改坏了可一键复原。每次保存都存一份历史备份。</div>'
+     + '<div style="display:flex;gap:calc(10*var(--S));margin-top:calc(12*var(--S));flex-wrap:wrap;">'
+     +   '<button class="btn ghost" style="flex:1;min-width:calc(150*var(--S));" onclick="openPatchBox()">🧩 代码补丁</button>'
+     +   '<button class="btn ghost" style="flex:1;min-width:calc(150*var(--S));" onclick="exportSelf()">📤 导出网页（传平板/iPad）</button>'
+     + '</div>'
+     + '<div style="font-size:calc(18*var(--S));color:#AAA;margin-top:calc(8*var(--S));line-height:1.6;">导出的是「当前这份网页」，发到 iPad / 平板用 Safari 打开即可。</div>'
      + '</div>';
   h += '<div class="statcard"><div class="card-t">词表导入</div>'
      + '<div style="font-size:calc(22*var(--S));color:#888;line-height:1.7;margin-bottom:calc(16*var(--S));">'
@@ -6303,7 +6371,9 @@ function fForgetS(D, S, R){
 }
 function fIvl(S, dr){
   dr = dr || 0.9;
-  var i = Math.round((S / FSRS_FACTOR) * (Math.pow(dr, 1 / FSRS_DECAY) - 1));
+  var _k = 1;
+  try{ _k = (typeof calibK === 'function') ? calibK() : 1; }catch(e){ _k = 1; }
+  var i = Math.round(((S * _k) / FSRS_FACTOR) * (Math.pow(dr, 1 / FSRS_DECAY) - 1));
   return Math.max(1, Math.min(FSRS_MAX_IVL, i));
 }
 /* 间隔模糊化：>2.5 天时加随机抖动，避免同批词永远撞在一天 */
@@ -6506,18 +6576,40 @@ function isGrad(x){
   return x.learn === 'learned' || x.learn === 'learning' || (!x.learn && x.rv && x.rv.reps > 0);
 }
 
-/* 组今日复习队列（★每日复习上限 = 设置里的复习目标 revGoal，默认 100） */
+/* 组今日复习队列（★对齐 Anki v3：新卡 + 复习卡，各按每日额度截断） */
 function buildReviewQueue(){
   var now = Date.now();
-  var learn = [], due = [];
+  var learn = [], due = [], pool = [];
   S.words.forEach(function(x){
-    if(!x || !x.rv || !x.rv.next) return;
-    if(x.learn === 'learning'){ if(x.rv.next <= now) learn.push(x.w); return; }
-    if(!isGrad(x)) return;
-    if(x.rv.next <= now) due.push(x.w);
+    if(!x || !x.w) return;
+    if(x.rv && x.rv.next){
+      if(x.learn === 'learning' || x.learn === 'relearning'){
+        if(x.rv.next <= now) learn.push(x.w);        /* 学习/重学步骤已到点 → 优先 */
+        return;
+      }
+      if(!isGrad(x)) return;
+      if(x.rv.next <= now) due.push(x.w);
+      return;
+    }
+    if(!x.learn && !(x.rv && x.rv.reps)) pool.push(x.w);   /* ★ 从没学过 → 新卡池 */
   });
-  var cap = Math.max(1, S.revGoal || 100);
-  return learn.concat(due).slice(0, cap);
+  var T = (S.log || {})[dayKey()] || {};
+  var newGoal = (S.newGoal == null) ? 20 : S.newGoal;
+  var revGoal = (S.revGoal == null) ? 100 : S.revGoal;
+  var newLeft = Math.max(0, newGoal - (T.learn || 0));      /* 今日新卡剩余额度 */
+  var revLeft = Math.max(0, revGoal - (T.review || 0));     /* 今日复习剩余额度 */
+  pool = shuffle(pool.slice());                            /* Anki 默认新卡随机顺序 */
+  var pickNew = pool.slice(0, newLeft);
+  var pickRev = learn.slice();                             /* 学习步骤中的卡不占复习额度 */
+  pickRev = pickRev.concat(due.slice(0, Math.max(0, revLeft - pickRev.length)));
+  /* ★ v3：新卡与复习卡混合（每 2 张复习穿插 1 张新卡） */
+  var out = [], a = 0, b = 0;
+  while(a < pickNew.length || b < pickRev.length){
+    if(b < pickRev.length) out.push(pickRev[b++]);
+    if(b < pickRev.length) out.push(pickRev[b++]);
+    if(a < pickNew.length) out.push(pickNew[a++]);
+  }
+  return out;
 }
 
 /* 开始复习 */
@@ -6548,11 +6640,45 @@ function startReview(){
   rvStart(q);
 }
 
+
+/* ============ ★ v3 队列：忘了 → 回队尾（不再插到前面几张） ============ */
+function rvRelearn(w){
+  if(!S.rvQueue) S.rvQueue = [];
+  if(!S.rvCnt) S.rvCnt = {};
+  var n = (S.rvCnt[w] || 0);
+  var LIM = (S.rlMax == null) ? 2 : S.rlMax;      /* 本轮最多重来次数 */
+  if(n < LIM && S.rvQueue.length){
+    S.rvQueue.push(w);                            /* ★ 压到队尾 */
+  }else{
+    if(!S.rvDefer) S.rvDefer = [];
+    if(S.rvDefer.indexOf(w) < 0) S.rvDefer.push(w);   /* 超上限 → 留给下一次（10 分钟到期） */
+  }
+}
+/* 取下一张：跳过「本轮答错过、10 分钟学习步骤还没到」的卡 */
+function rvPickNext(){
+  var q = S.rvQueue || [];
+  if(!q.length) return false;
+  var now = Date.now(), guard = q.length * 2;
+  while(guard-- > 0 && q.length){
+    var w = q[0];
+    var x = S.words.filter(function(o){ return o.w === w; })[0];
+    var rv = x && x.rv;
+    var touched = S.rvCnt && S.rvCnt[w];
+    if(rv && touched && rv.due && rv.due > now + 3000){
+      q.push(q.shift());                          /* 学习步骤没到 → 挪到队尾 */
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 /* 进入复习界面 */
 function rvStart(words){
   S.rvQueue = shuffle(words.slice());
   S.rvGood = 0; S.rvBad = 0; S.rvHard = 0; S.rvEasy = 0; S.rvViewed = 0;
   S.rvPrev = null;   /* v8.6需求2：新一轮不显示上一词 */
+  S.rvCnt = {}; S.rvDefer = [];   /* ★ v3：本轮重来计数 / 延后到期 */
   save();
   go('review');
 }
@@ -6570,7 +6696,7 @@ function rvPrevSet(sel){
       if(!S.rvQueue) S.rvQueue = [];
       var _ex = S.rvQueue.indexOf(p.w);
       if(_ex >= 0) S.rvQueue.splice(_ex, 1);
-      S.rvQueue.splice(Math.min(2, S.rvQueue.length), 0, p.w);
+      rvRelearn(p.w);
     }else if(sel === 2 && x.rv){
       /* ★ 模糊 → 真惩罚：稳定度打折、难度上调、间隔缩一半，立刻生效 */
       x.rv.S = Math.max(0.1, (x.rv.S || 1) * 0.7);
@@ -6589,7 +6715,7 @@ function rvPrevSet(sel){
   var _tip;
   if(sel === 1){
     _tip = '😵「' + p.w + '」已打回队列，稍后再考'
-         + (_st > 0 && x.rv ? '（稳定度 ' + _st.toFixed(1) + ' → ' + x.rv.S.toFixed(1) + '）' : '（10 分钟后到期）');
+         + (_st > 0 && x.rv ? '（稳定度 ' + _st.toFixed(1) + ' → ' + x.rv.S.toFixed(1) + '）' : '（' + (S.stepRelearn || 10) + ' 分钟后到期）');
   }else{
     _tip = '🤔「' + p.w + '」记为模糊，间隔缩短'
          + (x && x.rv ? '（下次 ' + x.rv.ivl + ' 天）' : '');
@@ -6600,14 +6726,22 @@ function rvPrevSet(sel){
 /* 渲染当前卡 */
 function renderReview(){
   var q = S.rvQueue || [];
+  if(q.length && !rvPickNext()){
+    /* 剩下的卡都还在 10 分钟学习步骤里 → 本轮结束，留到到期再考 */
+    S.rvDefer = q.slice();
+    q.length = 0; S.rvQueue = q;
+  }
   if(!q.length){ rvFinish(); return; }
-  $('rvWord').textContent = q[0];
+  var _lw = S.words.filter(function(o){ return o.w === q[0]; })[0];
+  $('rvWord').textContent = q[0] + ((_lw && _lw.leech) ? ' 🐛' : '');
   $('rvMean').innerHTML = escH(cnOf(q[0])) + sentsHtml(q[0]);
   $('rvMean').classList.add('hide');
   var _nt = $('rvNote'); if(_nt) _nt.classList.add('hide');
   S.rvViewed = 0;
   $('rvHint').classList.remove('hide');
-  $('rvProg').textContent = '剩 ' + q.length + ' 词';
+  var _T0 = (S.log || {})[dayKey()] || {};
+  $('rvProg').textContent = '剩 ' + q.length + ' 词 · 新 ' + (_T0.learn || 0) + '/' + (S.newGoal == null ? 20 : S.newGoal)
+    + ' · 复习 ' + (_T0.review || 0) + '/' + (S.revGoal == null ? 100 : S.revGoal);
   try{ rvUpdateBtns(); }catch(e){}
   $('rvStat').textContent = '😀 ' + (S.rvGood || 0) + ' · 🤔 ' + (S.rvHard || 0) + ' · 😵 ' + (S.rvBad || 0) + (S.rvEasy ? ' · ⚡ ' + S.rvEasy : '');
   /* v8.6需求2：上一词回顾（单词 + 释义 + 忘记/模糊） */
@@ -6649,41 +6783,57 @@ function reviewAns(grade){
   grade = Math.max(1, Math.min(4, Math.round(grade || 1)));
   var w = q.shift();
   var x = S.words.filter(function(o){ return o.w === w; })[0];
-  var viewed = !!S.rvViewed;                 /* 本卡是否看过释义 */
+  var viewed = !!S.rvViewed;
   var eff = grade;
-  if(viewed && grade > 2){ eff = 2; }        /* ★ 看过释义 → 自动降档为「模糊」 */
+  if(viewed && grade > 2){ eff = 2; }
+  /* ★ v3：区分新卡 / 复习卡（Anki 的 new 与 review 分开计数、分开限额） */
+  var wasNew = !(x && x.rv && x.rv.reps > 0);
+  var inStep = !!(x && (x.learn === 'learning' || x.learn === 'relearning'));
+  if(x){ if(wasNew) logInc('learn'); else if(!inStep) logInc('review'); }  /* learning 步骤内的卡不重复占额度 */
+
   if(eff === 1){
     S.rvBad = (S.rvBad || 0) + 1;
     logInc('rno');
     if(x){
-      if(x.learn === 'learning') x.learn = 'learned';
+      var _isLrn = (wasNew || x.learn === 'learning');
+      /* ★ v3 learning steps：新卡错 → 1 分钟；复习卡错 → 10 分钟重学 */
+      var _againMin = _isLrn ? (S.stepAgain || 1) : (S.stepRelearn || 10);
+      x.learn = _isLrn ? 'learning' : 'relearning';
       ankiGrade(x, 'again');
-      /* Anki 式：忘记的词插到往后第 2 个位置，很快再考一次，不压到最后 */
-      q.splice(Math.min(2, q.length), 0, w);
-      /* v8.6需求1：取消遗忘多次回炉——忘的词继续在本轮队列里滚，不再送回学新 */
+      if(x.rv){ x.rv.due = Date.now() + _againMin * 60000; x.rv.next = x.rv.due; }
+      S.rvCnt = S.rvCnt || {};
+      S.rvCnt[w] = (S.rvCnt[w] || 0) + 1;
+      if(x.rv && (x.rv.lapses || 0) >= (S.leechTh || 8) && !x.leech){
+        x.leech = 1;
+        toast('🐛「' + w + '」已忘 ' + x.rv.lapses + ' 次 → 标为水蛭词（统计页可退回重学）', 3600);
+      }
+      rvRelearn(w);          /* 回队尾，本轮最多重来 rlMax 次 */
     }
-  }else if(eff === 2){
-    S.rvHard = (S.rvHard || 0) + 1;
-    logInc('ryes');
-    if(x){ if(x.learn === 'learning') x.learn = 'learned'; ankiGrade(x, 'hard'); }
-    if(viewed && grade > 2){ toast('☝ 已看过释义 → 本次按「模糊」计入', 2000); }
-  }else if(eff === 3){
-    S.rvGood = (S.rvGood || 0) + 1;
-    logInc('ryes');
-    if(x){ if(x.learn === 'learning') x.learn = 'learned'; ankiGrade(x, 'good'); }
   }else{
-    S.rvGood = (S.rvGood || 0) + 1;
-    S.rvEasy = (S.rvEasy || 0) + 1;
-    logInc('ryes');
-    if(x){ if(x.learn === 'learning') x.learn = 'learned'; ankiGrade(x, 'easy'); }
+    var gname = (eff === 2) ? 'hard' : (eff === 4) ? 'easy' : 'good';
+    if(eff === 2){ S.rvHard = (S.rvHard || 0) + 1; logInc('ryes'); }
+    else if(eff === 3){ S.rvGood = (S.rvGood || 0) + 1; logInc('ryes'); }
+    else { S.rvGood = (S.rvGood || 0) + 1; S.rvEasy = (S.rvEasy || 0) + 1; logInc('ryes'); }
+    if(x){
+      ankiGrade(x, gname);
+      if(wasNew || inStep){
+        if(eff === 2){
+          /* Hard：Anki 里仍在 learning step 里，10 分钟后再见 */
+          x.learn = (wasNew || x.learn === 'learning') ? 'learning' : 'relearning';
+          if(x.rv){ x.rv.due = Date.now() + (S.stepHard || 10) * 60000; x.rv.next = x.rv.due; }
+        }else{
+          x.learn = 'learned';          /* ★ graduate → 交给 FSRS 排长间隔 */
+        }
+      }
+    }
+    if(viewed && grade > 2){ toast('☝ 已看过释义 → 本次按「模糊」计入', 2000); }
   }
-  /* v8.6需求2：这个词出现在下一张卡上方（含释义 + 忘记/模糊） */
   S.rvPrev = { w: w, sel: 0 };
-  S.rvPrev = { w: w, sel: 0 };   /* v8.6需求2：刚答的词显示在下一张卡上方 */
   save();
   if(!q.length) rvFinish(); else renderReview();
 }
 function reviewExit(){
+
   var q = S.rvQueue || [];
   if(!q.length){ go('home'); return; }
   showConfirm('退出复习？还剩 ' + q.length + ' 个词，下次点「开始复习」继续。', function(){ go('home'); });
@@ -6694,7 +6844,10 @@ function rvFinish(){
   var g = S.rvGood || 0, hd = S.rvHard || 0, b = S.rvBad || 0, ez = S.rvEasy || 0;
   S.rvQueue = [];
   save();
-  toast('🎉 本轮复习完成！😀 ' + g + ' · 🤔 ' + hd + ' · 😵 ' + b + (ez ? ' · ⚡ ' + ez : ''), 3400);
+  var _df = (S.rvDefer || []).length;
+  toast('🎉 本轮复习完成！😀 ' + g + ' · 🤔 ' + hd + ' · 😵 ' + b + (ez ? ' · ⚡ ' + ez : '')
+        + (_df ? '\n另有 ' + _df + ' 个词 ' + (S.stepRelearn || 10) + ' 分钟后可再考（点「开始复习」即可）' : ''), 3800);
+  S.rvDefer = [];
   setTimeout(function(){ go('home'); }, 900);
 }
 
@@ -7901,6 +8054,7 @@ function openAnkiImport(){
   showMask('m-anki');
 }
 function ankiPickFile(){
+  var _mc = $('ankiMergeChk'); if(_mc) _mc.checked = (S.ankiMerge !== 0);
   var f = $('ankiFile');
   if(f){ try{ f.value = ''; }catch(e){} f.click(); }
 }
@@ -7989,25 +8143,54 @@ function _ankiProgHtml(){
   if(_ankiProgErr) return '<br><span style="color:#e05252;font-size:12px;">⚠️ 进度没读到：' + _ankiProgErr + '</span>（本次只导词）';
   return '';
 }
-/* ★ 把 Anki 的进度写进词表（本地已有真实进度的词不覆盖） */
+/* ★ v9.10：把 Anki 进度写进词表，并且「合并」而不是覆盖
+   同词两边都有进度时：S / D 按复习次数加权平均，due 取更早，lapses 取更大（保守，怕忘）
+   S.ankiMerge === 0 时退回旧行为：保留本地进度 */
 function _applyAnkiProgress(list, prog){
   var map = (prog && prog.words) || {};
-  var have = {}, hit = 0, keep = 0, fresh = 0;
+  var have = {}, hit = 0, merged = 0, keep = 0, fresh = 0;
+  var doMerge = (S.ankiMerge !== 0);
   (list || []).forEach(function(x){
     if(!x || !x.w) return;
     var k = String(x.w).trim().toLowerCase();
     have[k] = 1;
     var v = map[k];
     if(!v) return;
-    /* 本地已经背过（且不是上次从 Anki 导的）→ 保留本地，别回退 */
-    if(x.rv && x.rv.reps > 0 && x.rv.src !== 'anki'){ keep++; return; }
+    if(x.rv && x.rv.reps > 0){
+      if(!doMerge){ keep++; return; }
+      var a = x.rv, b = v;
+      var ra = Math.max(1, a.reps || 1), rb = Math.max(1, b.reps || 1), W = ra + rb;
+      var nS = ((a.S || 1) * ra + (b.S || 1) * rb) / W;
+      var nD = ((a.D || 5) * ra + (b.D || 5) * rb) / W;
+      var d1 = a.due || Infinity, d2 = b.due || Infinity;
+      var minDue = Math.min(d1, d2);
+      if(!isFinite(minDue)) minDue = Date.now();
+      x.rv = {
+        S: Math.round(nS * 10000) / 10000,
+        D: Math.round(Math.min(10, Math.max(1, nD)) * 100) / 100,
+        S0: Math.max(a.S0 || 0, b.S0 || 0) || nS,
+        reps: Math.max(ra, rb),
+        lapses: Math.max(a.lapses || 0, b.lapses || 0),
+        ivl: Math.max(a.ivl || 0, b.ivl || 0),
+        due: minDue,
+        next: minDue,
+        last: Math.max(a.last || 0, b.last || 0),
+        ef: Math.round(((a.ef || 2.5) + (b.ef || 2.5)) / 2 * 1000) / 1000,
+        stage: Math.max(a.stage || 1, b.stage || 1),
+        src: 'anki'
+      };
+      x.learn = 'learned';
+      if(x.pre !== 'known' && x.pre !== 'unknown') x.pre = 'known';
+      merged++;
+      return;
+    }
     x.rv = v;
-    x.learn = 'learned';                       /* 进得了复习队列（isGrad 要求 learned/learning） */
+    x.learn = 'learned';
     if(x.pre !== 'known' && x.pre !== 'unknown') x.pre = 'known';
     hit++;
   });
-  Object.keys(map).forEach(function(k){ if(!have[k]) fresh++; });   /* Anki 有、本词库没有 */
-  return { hit: hit, keep: keep, miss: fresh };
+  Object.keys(map).forEach(function(k){ if(!have[k]) fresh++; });
+  return { hit: hit, merged: merged, keep: keep, miss: fresh };
 }
 function _finishAnkiRows(rows, bookName, p){
   if(!rows || !rows.length){
@@ -8117,6 +8300,7 @@ function ankiDoImport(){
   hideMask('m-anki');
   var _pTxt = '';
   if(_progR && _progR.hit) _pTxt = '｜🧠 继承进度 ' + _progR.hit + ' 词' + (_progR.keep ? '（保留本地 ' + _progR.keep + '）' : '');
+  if(_progR && _progR.merged) _pTxt += '｜🔀 与已有进度合并 ' + _progR.merged + ' 词';
   toast('✅ 词库「' + bookName + '」：' + nw.length + ' 词（新增 ' + added + '，合并 ' + kept + '）'
         + _pTxt + (saved ? '' : ' ⚠️保存失败'), 5000);
   if(_progR && _progR.hit){
@@ -8237,9 +8421,11 @@ function ankiGrade(x, grade){
 
   if(g === 1){
     rv.ivl = 0;
-    rv.due = now + 10 * 60 * 1000;      /* 学习步骤：10 分钟后再来 */
+    rv.due = now + (S.rlStep || 10) * 60 * 1000;   /* 学习步骤：默认 10 分钟后再来 */
   }else{
     rv.ivl = fIvl(rv.S, retain);        /* 按目标保留率换算天数 */
+    if(rv.ivl > 2){ rv.ivl = Math.round(rv.ivl * (1 + (Math.random() * 0.1 - 0.05))); }  /* v3：±5% 抖动 */
+    rv.ivl = Math.max(1, Math.min(Math.round(rv.ivl), S.maxIvl || 365));   /* 最长间隔上限 */
     rv.due = now + rv.ivl * 86400000;
   }
   rv.g = g;
@@ -8275,6 +8461,206 @@ function rvUpdateBtns(){
     if(!el) return;
     el.textContent = m[2] + ' · ' + rvIvlText(x, m[1]);
   });
+}
+
+/* ================= v9.8：开发者面板（补丁 / 备份 / 复原 / 导出网页） ================= */
+function _ls(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } }
+function _lsSet(k, v){ try{ localStorage.setItem(k, v); return 1; }catch(e){ return 0; } }
+function _lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+function patchHist(){
+  try{ return JSON.parse(_ls('ks_patch_hist') || '[]'); }catch(e){ return []; }
+}
+function patchSaveHist(h){
+  while(h.length > 4) h.pop();
+  try{ _lsSet('ks_patch_hist', JSON.stringify(h)); }
+  catch(e){ try{ h.pop(); _lsSet('ks_patch_hist', JSON.stringify(h)); }catch(x){} }
+}
+function patchRun(code, silent){
+  if(!code || !String(code).replace(/\s/g, '').length) return 1;
+  try{ (new Function(String(code)))(); S._patchErr = ''; return 1; }
+  catch(e){
+    S._patchErr = (e && e.message) || '执行失败';
+    if(!silent){ try{ toast('❌ 补丁报错：' + S._patchErr, 5000); }catch(x){} }
+    return 0;
+  }
+}
+function patchBoot(){
+  var c = _ls('ks_patch_cur');
+  if(c) patchRun(c, true);
+}
+function patchStatusText(){
+  var c = _ls('ks_patch_cur');
+  if(!c) return '当前没有补丁（原始行为）';
+  if(S._patchErr) return '⚠️ 补丁报错：' + S._patchErr;
+  return '✅ 补丁已生效 · ' + c.length + ' 字符';
+}
+var _patchBox = null;
+function closePatchBox(){
+  if(_patchBox && _patchBox.parentNode) _patchBox.parentNode.removeChild(_patchBox);
+  _patchBox = null;
+}
+function openPatchBox(){
+  closePatchBox();
+  var c = _ls('ks_patch_cur');
+  var d = document.createElement('div');
+  d.id = 'm-patch';
+  d.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:flex-end;';
+  var h = patchHist(), hh = '';
+  for(var i = 0; i < h.length; i++){
+    hh += '<div onclick="patchRestore(' + i + ')" style="padding:calc(10*var(--S)) 0;border-bottom:1px solid #EEE;font-size:calc(19*var(--S));color:#0AA9A6;">'
+       +  (h[i].t || '') + ' · ' + (h[i].n || 0) + ' 字符 <span style="color:#999;">（点此恢复）</span></div>';
+  }
+  d.innerHTML = '<div style="background:#fff;border-radius:calc(20*var(--S)) calc(20*var(--S)) 0 0;padding:calc(18*var(--S)) calc(20*var(--S)) calc(26*var(--S));width:100%;max-height:90%;overflow:auto;box-sizing:border-box;">'
+    + '<div style="font-size:calc(28*var(--S));font-weight:700;">🧩 代码补丁</div>'
+    + '<div style="font-size:calc(19*var(--S));color:#666;margin-top:calc(4*var(--S));">' + patchStatusText() + '</div>'
+    + '<div style="font-size:calc(18*var(--S));color:#999;margin-top:calc(8*var(--S));line-height:1.6;">粘贴 JS 覆盖已有函数，例如：<br>reviewAns = function(g){ ... }<br>保存前会自动把上一版存进「历史备份」。只改网页逻辑，改不了安卓壳。</div>'
+    + '<textarea id="patchTa" spellcheck="false" style="width:100%;height:38vh;margin-top:calc(10*var(--S));font-size:calc(17*var(--S));font-family:monospace;padding:calc(8*var(--S));border:1px solid #DDD;border-radius:calc(10*var(--S));box-sizing:border-box;"></textarea>'
+    + '<div style="display:flex;gap:calc(8*var(--S));margin-top:calc(10*var(--S));flex-wrap:wrap;">'
+    + '<button onclick="patchSave()" style="flex:1;min-width:calc(110*var(--S));padding:calc(13*var(--S));border:0;border-radius:calc(10*var(--S));background:#08B8B5;color:#fff;font-size:calc(21*var(--S));">保存并运行</button>'
+    + '<button onclick="patchClear()" style="flex:1;min-width:calc(110*var(--S));padding:calc(13*var(--S));border:0;border-radius:calc(10*var(--S));background:#F0604F;color:#fff;font-size:calc(21*var(--S));">一键复原</button>'
+    + '<button onclick="closePatchBox()" style="flex:1;min-width:calc(90*var(--S));padding:calc(13*var(--S));border:0;border-radius:calc(10*var(--S));background:#EEE;color:#333;font-size:calc(21*var(--S));">关闭</button>'
+    + '</div>'
+    + '<div style="font-size:calc(17*var(--S));color:#999;margin-top:calc(8*var(--S));">「一键复原」= 删掉当前补丁，回到没改过的原始行为；历史备份不会丢。</div>'
+    + (hh ? '<div style="font-size:calc(20*var(--S));font-weight:700;margin-top:calc(16*var(--S));">历史备份（最多 4 份）</div>' + hh : '')
+    + '</div>';
+  document.body.appendChild(d);
+  _patchBox = d;
+  var ta = d.querySelector('#patchTa');
+  if(ta) ta.value = c;
+}
+function patchSave(){
+  var d = document.getElementById('m-patch');
+  var ta = d && d.querySelector('#patchTa');
+  if(!ta) return;
+  var code = ta.value || '';
+  var old = _ls('ks_patch_cur');
+  if(old.replace(/\s/g, '').length){
+    var h = patchHist();
+    h.unshift({ t: new Date().toLocaleString(), n: old.length, code: old });
+    patchSaveHist(h);
+  }
+  if(!_lsSet('ks_patch_cur', code)){ toast('保存失败：本地存储满了（先复原或清历史）', 4000); return; }
+  if(patchRun(code, false)) toast('✅ 已保存并运行（上一版已进历史备份）', 2600);
+  openPatchBox();
+}
+function patchRestore(i){
+  var h = patchHist(), it = h[i];
+  if(!it) return;
+  _lsSet('ks_patch_cur', it.code || '');
+  patchRun(it.code || '', false);
+  toast('↩️ 已恢复到 ' + (it.t || '') + ' 的备份', 2600);
+  openPatchBox();
+}
+function patchClear(){
+  _lsDel('ks_patch_cur');
+  S._patchErr = '';
+  toast('✅ 已复原（补丁清空，历史备份保留）', 2800);
+  openPatchBox();
+}
+function exportSelf(){
+  try{
+    var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kingSchool_' + dayKey() + '.html';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ try{ document.body.removeChild(a); URL.revokeObjectURL(a.href); }catch(e){} }, 4000);
+    toast('📤 已导出（' + Math.round(html.length / 1024) + ' KB）到「下载」文件夹，发到 iPad / 平板即可打开', 4600);
+    if((html.length / 1048576) > 6){ setTimeout(function(){ toast('⚠️ 文件偏大：下次请在首页导出（当前页面渲染内容多）', 5200); }, 900); }
+    if(/Android/.test(navigator.userAgent || '') && /wv\)/.test(navigator.userAgent || '')){
+      setTimeout(function(){ toast('提示：安卓 App 内若没弹出下载框，请用 Chrome 打开网页版再导出', 5600); }, 1200);
+    }
+  }catch(e){ toast('导出失败（WebView 可能不支持下载）：请用 Chrome / Safari 打开网页版再导出', 5000); }
+}
+setTimeout(function(){ try{ patchBoot(); }catch(e){} }, 40);
+
+/* ================= v9.9：Anki 参数 / 水蛭词 ================= */
+function setNum(k, v, def, min, max){
+  v = parseFloat(v);
+  if(isNaN(v)) v = def;
+  v = Math.max(min, Math.min(max, v));
+  S[k] = v;
+  save();
+  toast('已保存：' + k + ' = ' + v, 1500);
+  renderStats();
+}
+function leechCount(){
+  var n = 0;
+  (S.words || []).forEach(function(x){ if(x && x.leech) n++; });
+  return n;
+}
+function leechList(){
+  return (S.words || []).filter(function(x){ return x && x.leech; });
+}
+function leechReset(){
+  var n = 0;
+  (S.words || []).forEach(function(x){
+    if(x && x.leech){
+      x.leech = 0;
+      delete x.learn;
+      delete x.rv;
+      n++;
+    }
+  });
+  S.rvQueue = (S.rvQueue || []).filter(function(w){
+    var x = S.words.filter(function(o){ return o.w === w; })[0];
+    return !(x && x.leech);
+  });
+  save();
+  toast('↩️ 已把 ' + n + ' 个水蛭词退回未学（下次学新/复习会重新出现）', 3400);
+  renderStats();
+}
+
+/* ================= v9.11：注册离线缓存（只在 http/https 生效，APK 里 file:// 自动跳过） ================= */
+try{
+  if('serviceWorker' in navigator && location.protocol.indexOf('http') === 0){
+    window.addEventListener('load', function(){
+      try{ navigator.serviceWorker.register('./sw.js').catch(function(){}); }catch(e){}
+    });
+  }
+}catch(e){}
+
+/* ================= v9.12：记忆曲线自动校准 ================= */
+function calibK(){
+  var k = (S.calib == null) ? 1 : Number(S.calib);
+  if(!(k > 0)) k = 1;
+  return Math.max(0.5, Math.min(2, k));
+}
+function calibSamples(){
+  var pts = (typeof realPoints === 'function') ? realPoints() : [];
+  var n = 0;
+  pts.forEach(function(p){ n += (p.n || 0); });
+  return { pts: pts, n: n };
+}
+function fsrsCalib(){
+  var sm = calibSamples();
+  if(!sm.pts.length || sm.n < 20){
+    toast('样本还不够：至少需要 20 次复习记录（现在 ' + sm.n + ' 次），先背几天再来校准', 4200);
+    return;
+  }
+  var arr = (S.words || []).filter(function(x){ return x.rv && x.rv.S > 0; });
+  if(!arr.length){ toast('还没有记忆中的词，无法校准', 3000); return; }
+  var tot = 0, wsum = 0, detail = [];
+  sm.pts.forEach(function(p){
+    var sum = 0;
+    arr.forEach(function(x){ sum += fR(p.d, x.rv.S); });
+    var pred = sum / arr.length * 100;
+    if(!(pred > 0)) return;
+    var k = p.v / pred;
+    k = Math.max(0.3, Math.min(3, k));
+    tot += k * p.n; wsum += p.n;
+    detail.push('第' + p.d + '天：实测 ' + p.v + '% / 预测 ' + Math.round(pred) + '%');
+  });
+  if(!wsum){ toast('数据不足，无法校准', 3000); return; }
+  var k = tot / wsum;
+  k = Math.max(0.5, Math.min(2, Math.round(k * 100) / 100));
+  S.calib = k;
+  S.calibAt = Date.now();
+  save();
+  renderStats();
+  toast('✅ 校准完成：系数 ' + k + '（样本 ' + wsum + ' 次）\n' + detail.slice(0, 3).join('\n'), 5200);
 }
 
 /* ==========================================================================
@@ -8498,7 +8884,7 @@ function download(silent){
 
     stat('✅ 已拉取 ' + cnt + ' 项' + (skipped ? '（跳过 ' + skipped + '）' : '') + '，即将刷新…');
     if(window.__ksDirty) window.__ksDirty = false;
-    setTimeout(function(){ location.reload(); }, 700);
+    setTimeout(function(){ _softReload(); }, 500);
     return { count: cnt, skipped: skipped };
   }).catch(function(e){
     stat('❌ 拉取失败：' + e.message);
